@@ -36,6 +36,13 @@ async function userSupabase() {
   )
 }
 
+function gerarSenhaAleatoria() {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789@#!'
+  return Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+}
+
+// ─── AUTH / USERS ─────────────────────────────────────────────────────────────
+
 export async function setLojaAtiva(lojaId: string) {
   const cookieStore = await cookies()
   cookieStore.set('loja_ativa', lojaId, {
@@ -44,6 +51,55 @@ export async function setLojaAtiva(lojaId: string) {
     sameSite: 'lax',
     maxAge: 60 * 60 * 24 * 7,
   })
+}
+
+export async function criarUsuario(data: {
+  email: string
+  senha: string
+  nome: string
+  perfil: string
+  loja_id: string
+}) {
+  const supabase = adminSupabase()
+  const { data: userData, error } = await supabase.auth.admin.createUser({
+    email: data.email,
+    password: data.senha,
+    email_confirm: true,
+    user_metadata: { nome: data.nome },
+  })
+  if (error || !userData.user) throw new Error(error?.message ?? 'Falha ao criar usuário')
+
+  const { error: perfilError } = await supabase.from('usuarios_perfil').insert({
+    id: userData.user.id,
+    loja_id: data.loja_id,
+    nome: data.nome,
+    perfil: data.perfil,
+    ativo: true,
+  })
+  if (perfilError) {
+    await supabase.auth.admin.deleteUser(userData.user.id)
+    throw new Error(perfilError.message)
+  }
+  revalidatePath('/admin/usuarios')
+  return { userId: userData.user.id }
+}
+
+export async function resetarSenha(userId: string) {
+  const supabase = adminSupabase()
+  const novaSenha = gerarSenhaAleatoria()
+  const { error } = await supabase.auth.admin.updateUserById(userId, { password: novaSenha })
+  if (error) throw new Error(error.message)
+  return { novaSenha }
+}
+
+export async function atualizarUsuario(
+  id: string,
+  data: { nome: string; perfil: Perfil; loja_id: string; ativo: boolean }
+) {
+  const supabase = adminSupabase()
+  const { error } = await supabase.from('usuarios_perfil').update(data).eq('id', id)
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin/usuarios')
 }
 
 export async function updateUserRole(perfilId: string, novoPerfil: Perfil) {
@@ -85,6 +141,8 @@ export async function deleteUser(id: string) {
   revalidatePath('/admin/usuarios')
 }
 
+// ─── LOJA SETTINGS ────────────────────────────────────────────────────────────
+
 export async function updateLojaSettings(
   lojaId: string,
   data: {
@@ -110,6 +168,8 @@ export async function updateLojaSettings(
   revalidatePath('/', 'layout')
 }
 
+// ─── LEADS ────────────────────────────────────────────────────────────────────
+
 export async function updateLead(
   leadId: string,
   updates: {
@@ -117,13 +177,14 @@ export async function updateLead(
     observacoes?: string | null
     responsavel_id?: string | null
     data_contato?: string | null
+    nome?: string
+    telefone?: string
+    email?: string | null
+    veiculo_interesse?: string | null
   }
 ) {
   const supabase = await userSupabase()
-  const { error } = await supabase
-    .from('leads')
-    .update(updates)
-    .eq('id', leadId)
+  const { error } = await supabase.from('leads').update(updates).eq('id', leadId)
   if (error) throw new Error(error.message)
   revalidatePath('/admin/leads/' + leadId)
   revalidatePath('/admin/crm')
@@ -156,17 +217,10 @@ export async function saveMensagemPadrao(
 ) {
   const supabase = await userSupabase()
   if (id) {
-    const { error } = await supabase
-      .from('mensagens_padrao')
-      .update({ titulo, mensagem })
-      .eq('id', id)
+    const { error } = await supabase.from('mensagens_padrao').update({ titulo, mensagem }).eq('id', id)
     if (error) throw new Error(error.message)
   } else {
-    const { error } = await supabase.from('mensagens_padrao').insert({
-      loja_id: lojaId,
-      titulo,
-      mensagem,
-    })
+    const { error } = await supabase.from('mensagens_padrao').insert({ loja_id: lojaId, titulo, mensagem })
     if (error) throw new Error(error.message)
   }
   revalidatePath('/admin/configuracoes')
@@ -179,29 +233,23 @@ export async function deleteMensagemPadrao(id: string) {
   revalidatePath('/admin/configuracoes')
 }
 
+// ─── LEMBRETES ────────────────────────────────────────────────────────────────
+
 export async function concluirLembrete(id: string) {
   const supabase = await userSupabase()
-  const { error } = await supabase
-    .from('lembretes')
-    .update({ concluido: true })
-    .eq('id', id)
+  const { error } = await supabase.from('lembretes').update({ concluido: true }).eq('id', id)
   if (error) throw new Error(error.message)
   revalidatePath('/admin/dashboard')
 }
 
+// ─── VEÍCULOS ─────────────────────────────────────────────────────────────────
+
 export async function marcarVeiculoVendido(veiculoId: string) {
   const supabase = adminSupabase()
-  const { data: veiculo } = await supabase
-    .from('veiculos')
-    .select('loja_id')
-    .eq('id', veiculoId)
-    .single()
+  const { data: veiculo } = await supabase.from('veiculos').select('loja_id').eq('id', veiculoId).single()
   if (!veiculo) throw new Error('Veículo não encontrado')
 
-  const { error } = await supabase
-    .from('veiculos')
-    .update({ status: 'vendido' })
-    .eq('id', veiculoId)
+  const { error } = await supabase.from('veiculos').update({ status: 'vendido' }).eq('id', veiculoId)
   if (error) throw new Error(error.message)
 
   const hoje = new Date()
@@ -231,6 +279,85 @@ export async function marcarVeiculoVendido(veiculoId: string) {
   revalidatePath('/admin/dashboard')
 }
 
+// ─── FINANCEIRO / CUSTOS ──────────────────────────────────────────────────────
+
+export async function saveAquisicao(
+  veiculoId: string,
+  lojaId: string,
+  custoAquisicao: number,
+  financeiroId?: string
+) {
+  const supabase = await userSupabase()
+  if (financeiroId) {
+    const { error } = await supabase
+      .from('financeiro_veiculos')
+      .update({ custo_aquisicao: custoAquisicao })
+      .eq('id', financeiroId)
+    if (error) throw new Error(error.message)
+  } else {
+    const { data: existing } = await supabase
+      .from('financeiro_veiculos')
+      .select('id')
+      .eq('veiculo_id', veiculoId)
+      .maybeSingle()
+    if (existing) {
+      const { error } = await supabase
+        .from('financeiro_veiculos')
+        .update({ custo_aquisicao: custoAquisicao })
+        .eq('id', existing.id)
+      if (error) throw new Error(error.message)
+    } else {
+      const { error } = await supabase.from('financeiro_veiculos').insert({
+        veiculo_id: veiculoId,
+        loja_id: lojaId,
+        custo_aquisicao: custoAquisicao,
+        custos_adicionais: [],
+      })
+      if (error) throw new Error(error.message)
+    }
+  }
+  revalidatePath('/admin/veiculos/' + veiculoId)
+}
+
+export async function saveCustoManutencao(data: {
+  id?: string
+  veiculo_id: string
+  loja_id: string
+  categoria: string
+  descricao: string
+  valor: number
+  data: string | null
+}) {
+  const supabase = await userSupabase()
+  if (data.id) {
+    const { error } = await supabase
+      .from('custos_manutencao')
+      .update({ categoria: data.categoria, descricao: data.descricao, valor: data.valor, data: data.data })
+      .eq('id', data.id)
+    if (error) throw new Error(error.message)
+  } else {
+    const { error } = await supabase.from('custos_manutencao').insert({
+      veiculo_id: data.veiculo_id,
+      loja_id: data.loja_id,
+      categoria: data.categoria,
+      descricao: data.descricao,
+      valor: data.valor,
+      data: data.data,
+    })
+    if (error) throw new Error(error.message)
+  }
+  revalidatePath('/admin/veiculos/' + data.veiculo_id)
+}
+
+export async function deleteCustoManutencao(id: string, veiculoId: string) {
+  const supabase = await userSupabase()
+  const { error } = await supabase.from('custos_manutencao').delete().eq('id', id)
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin/veiculos/' + veiculoId)
+}
+
+// ─── CONTATO PÚBLICO ─────────────────────────────────────────────────────────
+
 export async function submitContatoLead(
   lojaId: string,
   data: {
@@ -256,6 +383,7 @@ export async function submitContatoLead(
       loja_id: lojaId,
       nome: data.nome,
       telefone: data.telefone,
+      email: data.email || null,
       origem: 'site',
       status: 'novo',
       observacoes: obs || null,
@@ -274,6 +402,8 @@ export async function submitContatoLead(
     descricao: 'Lead gerado pelo formulário de contato do site.',
   })
 }
+
+// ─── VISTORIA ─────────────────────────────────────────────────────────────────
 
 export async function saveVistoria(
   veiculoId: string,

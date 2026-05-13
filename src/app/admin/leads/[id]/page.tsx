@@ -1,5 +1,4 @@
 import { notFound, redirect } from 'next/navigation'
-import Link from 'next/link'
 import { createServerSupabase } from '@/lib/supabase-server'
 import { getLojaIdAtiva } from '@/lib/getLojaIdAtiva'
 import type { Lead, LeadInteracao, MensagemPadrao, UsuarioPerfil } from '@/types'
@@ -38,7 +37,7 @@ export default async function LeadDetailPage({
         .single(),
       supabase
         .from('lead_interacoes')
-        .select('*')
+        .select('*, usuario:usuarios_perfil(nome)')
         .eq('lead_id', id)
         .order('created_at', { ascending: false }),
       supabase
@@ -59,28 +58,21 @@ export default async function LeadDetailPage({
   const vendedores = (vendedoresData ?? []) as { id: string; nome: string }[]
   const templates = (templatesData ?? []) as MensagemPadrao[]
 
+  const criadorNome = lead.criado_por
+    ? (vendedores.find(v => v.id === lead.criado_por)?.nome ?? null)
+    : null
+
   return (
-    <div className="p-6 md:p-8 max-w-3xl">
-      <div className="mb-8">
-        <Link
-          href="/admin/crm"
-          className="text-[#6B7280] hover:text-[#111] text-sm transition-colors inline-flex items-center gap-1 mb-4"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          Voltar ao CRM
-        </Link>
-        <h1 className="font-[family-name:var(--font-barlow-condensed)] text-3xl font-black uppercase text-[#111]">
-          {lead.nome}
-        </h1>
-        <p className="text-[#6B7280] text-sm mt-1">
-          {new Date(lead.created_at).toLocaleDateString('pt-BR', {
-            day: '2-digit', month: 'long', year: 'numeric',
-            hour: '2-digit', minute: '2-digit',
-          })}
-        </p>
-      </div>
+    <div className="p-6 md:p-8 max-w-4xl">
+      <a
+        href="/admin/crm"
+        className="text-[#6B7280] hover:text-[#111] text-sm transition-colors inline-flex items-center gap-1 mb-6"
+      >
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+        </svg>
+        Voltar ao CRM
+      </a>
 
       <LeadDetailClient
         lead={lead}
@@ -89,6 +81,7 @@ export default async function LeadDetailPage({
         templates={templates}
         lojaId={lojaId}
         userId={user.id}
+        criadorNome={criadorNome}
       />
     </div>
   )

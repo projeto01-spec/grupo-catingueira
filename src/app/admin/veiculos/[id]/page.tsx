@@ -3,7 +3,8 @@ import { createServerSupabase } from '@/lib/supabase-server'
 import { getLojaIdAtiva } from '@/lib/getLojaIdAtiva'
 import VeiculoForm from '@/components/admin/VeiculoForm'
 import MarcaVendidoButton from '@/components/admin/MarcaVendidoButton'
-import type { Veiculo, UsuarioPerfil } from '@/types'
+import CustosVeiculoClient from './CustosVeiculoClient'
+import type { Veiculo, UsuarioPerfil, FinanceiroVeiculo, CustoManutencao } from '@/types'
 
 export default async function EditarVeiculoPage({
   params,
@@ -13,23 +14,16 @@ export default async function EditarVeiculoPage({
   const { id } = await params
   const supabase = await createServerSupabase()
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: perfilData } = await supabase
-    .from('usuarios_perfil')
-    .select('*')
-    .eq('id', user.id)
-    .single()
-
+  const { data: perfilData } = await supabase.from('usuarios_perfil').select('*').eq('id', user.id).single()
   if (!perfilData) redirect('/login')
   const perfil = perfilData as UsuarioPerfil
 
   const lojaId = await getLojaIdAtiva(perfil)
 
-  const [{ data }, { data: vistoriaData }] = await Promise.all([
+  const [{ data }, { data: vistoriaData }, { data: finData }, { data: custosData }] = await Promise.all([
     supabase.from('veiculos').select('*').eq('id', id).eq('loja_id', lojaId).single(),
     supabase
       .from('vistoria_veiculo')
@@ -38,11 +32,26 @@ export default async function EditarVeiculoPage({
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
+    supabase
+      .from('financeiro_veiculos')
+      .select('*')
+      .eq('veiculo_id', id)
+      .eq('loja_id', lojaId)
+      .maybeSingle(),
+    supabase
+      .from('custos_manutencao')
+      .select('*')
+      .eq('veiculo_id', id)
+      .order('data', { ascending: false }),
   ])
 
   if (!data) notFound()
   const veiculo = data as Veiculo
   const vistoria = vistoriaData as { aprovado: boolean } | null
+  const financeiro = finData as FinanceiroVeiculo | null
+  const custos = (custosData ?? []) as CustoManutencao[]
+
+  const podeVerFinanceiro = ['gerente', 'diretor', 'admin'].includes(perfil.perfil)
 
   return (
     <div className="p-6 md:p-8 max-w-4xl">
@@ -108,7 +117,17 @@ export default async function EditarVeiculoPage({
           </div>
         </div>
       </div>
+
       <VeiculoForm veiculo={veiculo} lojaId={lojaId} />
+
+      {podeVerFinanceiro && (
+        <CustosVeiculoClient
+          veiculo={veiculo}
+          financeiro={financeiro}
+          custos={custos}
+          lojaId={lojaId}
+        />
+      )}
     </div>
   )
 }

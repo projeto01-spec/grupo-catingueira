@@ -64,17 +64,30 @@ export interface FinanceiroVeiculo {
   veiculo?: Pick<Veiculo, 'marca' | 'modelo' | 'ano' | 'data_aquisicao'> | null
 }
 
+export interface CustoManutencao {
+  id: string
+  veiculo_id: string
+  loja_id: string
+  categoria: string
+  descricao: string
+  valor: number
+  data: string | null
+  created_at: string
+}
+
 export interface Lead {
   id: string
   loja_id: string
   nome: string
   telefone: string
+  email: string | null
   veiculo_id: string | null
-  veiculo?: Pick<Veiculo, 'marca' | 'modelo' | 'ano'> | null
+  veiculo?: Pick<Veiculo, 'id' | 'marca' | 'modelo' | 'ano'> | null
   origem: OrigemLead
   status: StatusLead
   observacoes: string | null
   responsavel_id: string | null
+  criado_por: string | null
   tags: string[]
   data_contato: string | null
   veiculo_interesse: string | null
@@ -87,6 +100,7 @@ export interface UsuarioPerfil {
   loja?: Loja | null
   perfil: Perfil
   nome: string
+  email?: string
   ativo: boolean
   created_at: string
 }
