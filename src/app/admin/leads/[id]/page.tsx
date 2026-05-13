@@ -64,17 +64,17 @@ export default async function LeadDetailPage({
       <div className="mb-8">
         <Link
           href="/admin/crm"
-          className="text-[#555] hover:text-white text-sm transition-colors inline-flex items-center gap-1 mb-4"
+          className="text-[#6B7280] hover:text-[#111] text-sm transition-colors inline-flex items-center gap-1 mb-4"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
           Voltar ao CRM
         </Link>
-        <h1 className="font-[family-name:var(--font-barlow-condensed)] text-3xl font-black uppercase text-white">
+        <h1 className="font-[family-name:var(--font-barlow-condensed)] text-3xl font-black uppercase text-[#111]">
           {lead.nome}
         </h1>
-        <p className="text-[#555] text-sm mt-1">
+        <p className="text-[#6B7280] text-sm mt-1">
           {new Date(lead.created_at).toLocaleDateString('pt-BR', {
             day: '2-digit', month: 'long', year: 'numeric',
             hour: '2-digit', minute: '2-digit',

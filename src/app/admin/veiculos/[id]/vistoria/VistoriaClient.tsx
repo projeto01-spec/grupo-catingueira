@@ -8,10 +8,12 @@ import type { VistoriaVeiculo } from '@/types'
 type Status = 'ok' | 'nok' | 'na'
 
 const statusCls: Record<Status, string> = {
-  ok: 'bg-green-600/20 text-green-400 border-green-600/30',
-  nok: 'bg-red-600/20 text-red-400 border-red-600/30',
-  na: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+  ok: 'bg-green-50 text-green-700 border-green-200',
+  nok: 'bg-red-50 text-red-700 border-red-200',
+  na: 'bg-gray-100 text-gray-500 border-gray-200',
 }
+
+const statusInactiveCls = 'bg-white text-[#9CA3AF] border-[#E5E5E5] hover:border-[#D0D0D0]'
 
 interface Props {
   veiculoId: string
@@ -38,11 +40,6 @@ export default function VistoriaClient({ veiculoId, lojaId, itensConfig, vistori
   const okCount = Object.values(itens).filter(v => v === 'ok').length
   const aprovado = nokCount === 0 && okCount > 0
 
-  function toggleStatus(key: string, current: Status) {
-    const next: Status = current === 'na' ? 'ok' : current === 'ok' ? 'nok' : 'na'
-    setItens(prev => ({ ...prev, [key]: next }))
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSalvando(true)
@@ -63,33 +60,33 @@ export default function VistoriaClient({ veiculoId, lojaId, itensConfig, vistori
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="flex gap-4 flex-wrap">
         <div className="flex items-center gap-2">
-          <div className="w-2.5 h-2.5 rounded-full bg-green-400" />
-          <span className="text-[#888] text-sm">OK ({okCount})</span>
+          <div className="w-2.5 h-2.5 rounded-full bg-green-500" />
+          <span className="text-[#6B7280] text-sm">OK ({okCount})</span>
         </div>
         <div className="flex items-center gap-2">
-          <div className="w-2.5 h-2.5 rounded-full bg-red-400" />
-          <span className="text-[#888] text-sm">NOK ({nokCount})</span>
+          <div className="w-2.5 h-2.5 rounded-full bg-red-500" />
+          <span className="text-[#6B7280] text-sm">NOK ({nokCount})</span>
         </div>
         <div
           className={`ml-auto px-3 py-1.5 rounded-full text-xs font-semibold border ${
             aprovado
-              ? 'bg-green-600/20 text-green-400 border-green-600/30'
+              ? 'bg-green-50 text-green-700 border-green-200'
               : nokCount > 0
-              ? 'bg-red-600/20 text-red-400 border-red-600/30'
-              : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+              ? 'bg-red-50 text-red-700 border-red-200'
+              : 'bg-amber-50 text-amber-700 border-amber-200'
           }`}
         >
           {aprovado ? '✅ Aprovada' : nokCount > 0 ? '❌ Reprovada' : '⚠️ Pendente'}
         </div>
       </div>
 
-      <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl overflow-hidden">
-        <div className="divide-y divide-[#1E1E1E]">
+      <div className="bg-white border border-[#E5E5E5] rounded-xl overflow-hidden shadow-sm">
+        <div className="divide-y divide-[#F0F0F0]">
           {itensConfig.map(item => {
             const status = itens[item.key]
             return (
               <div key={item.key} className="flex items-center justify-between px-5 py-3">
-                <span className="text-white text-sm">{item.label}</span>
+                <span className="text-[#111] text-sm">{item.label}</span>
                 <div className="flex gap-2">
                   {(['ok', 'nok', 'na'] as Status[]).map(s => (
                     <button
@@ -97,9 +94,7 @@ export default function VistoriaClient({ veiculoId, lojaId, itensConfig, vistori
                       type="button"
                       onClick={() => setItens(prev => ({ ...prev, [item.key]: s }))}
                       className={`px-3 py-1 rounded-md text-xs font-medium border transition-colors ${
-                        status === s
-                          ? statusCls[s]
-                          : 'border-[#2A2A2A] text-[#444] hover:text-[#888]'
+                        status === s ? statusCls[s] : statusInactiveCls
                       }`}
                     >
                       {s.toUpperCase()}
@@ -112,8 +107,8 @@ export default function VistoriaClient({ veiculoId, lojaId, itensConfig, vistori
         </div>
       </div>
 
-      <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-5">
-        <label className="block text-[#555] text-xs uppercase tracking-wider mb-2">
+      <div className="bg-white border border-[#E5E5E5] rounded-xl p-5 shadow-sm">
+        <label className="block text-[#6B7280] text-xs uppercase tracking-wider mb-2">
           Observações gerais
         </label>
         <textarea
@@ -121,33 +116,33 @@ export default function VistoriaClient({ veiculoId, lojaId, itensConfig, vistori
           onChange={e => setObservacoes(e.target.value)}
           rows={4}
           placeholder="Anote problemas, ajustes necessários..."
-          className="w-full bg-[#111] border border-[#2A2A2A] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[var(--cor-primaria)] transition-colors resize-y placeholder-[#444]"
+          className="w-full bg-[#F8F8F8] border border-[#E5E5E5] rounded-lg px-3 py-2 text-[#111] text-sm focus:outline-none focus:border-[var(--cor-primaria)] transition-colors resize-y placeholder-[#D0D0D0]"
         />
       </div>
 
-      {erro && <p className="text-red-400 text-sm">{erro}</p>}
-      {sucesso && <p className="text-green-400 text-sm">Vistoria salva com sucesso.</p>}
+      {erro && <p className="text-red-600 text-sm">{erro}</p>}
+      {sucesso && <p className="text-green-600 text-sm">Vistoria salva com sucesso.</p>}
 
       <div className="flex gap-3">
         <button
           type="submit"
           disabled={salvando}
-          className="px-6 py-2.5 rounded-lg font-bold text-sm text-[#0D0D0D] transition-all hover:brightness-90 disabled:opacity-50"
-          style={{ backgroundColor: 'var(--cor-primaria)' }}
+          className="px-6 py-2.5 rounded-lg font-bold text-sm transition-all hover:brightness-90 disabled:opacity-50"
+          style={{ backgroundColor: 'var(--cor-primaria)', color: '#111' }}
         >
           {salvando ? 'Salvando...' : 'Salvar vistoria'}
         </button>
         <a
           href={`/api/pdf/ficha/${veiculoId}`}
           target="_blank"
-          className="px-4 py-2.5 rounded-lg text-sm font-medium border border-[#2A2A2A] text-[#666] hover:text-white hover:border-[#333] transition-colors"
+          className="px-4 py-2.5 rounded-lg text-sm font-medium border border-[#E5E5E5] text-[#6B7280] hover:text-[#111] hover:border-[#D0D0D0] transition-colors bg-white"
         >
           📄 Ficha PDF
         </a>
       </div>
 
       {vistoria && (
-        <p className="text-[#444] text-xs">
+        <p className="text-[#9CA3AF] text-xs">
           Última vistoria: {new Date(vistoria.created_at).toLocaleDateString('pt-BR', {
             day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
           })}

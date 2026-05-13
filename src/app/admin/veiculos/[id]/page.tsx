@@ -49,7 +49,7 @@ export default async function EditarVeiculoPage({
       <div className="mb-8">
         <a
           href="/admin/veiculos"
-          className="text-[#555] hover:text-white text-sm transition-colors inline-flex items-center gap-1 mb-4"
+          className="text-[#6B7280] hover:text-[#111] text-sm transition-colors inline-flex items-center gap-1 mb-4"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -58,33 +58,31 @@ export default async function EditarVeiculoPage({
         </a>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="font-[family-name:var(--font-barlow-condensed)] text-3xl font-black uppercase text-white">
+            <h1 className="font-[family-name:var(--font-barlow-condensed)] text-3xl font-black uppercase text-[#111]">
               Editar Veículo
             </h1>
-            <p className="text-[#555] text-sm mt-1">
+            <p className="text-[#6B7280] text-sm mt-1">
               {veiculo.marca} {veiculo.modelo} {veiculo.ano}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {/* Vistoria badge */}
             <a
               href={`/admin/veiculos/${id}/vistoria`}
               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
                 vistoria === null
-                  ? 'border-[#333] text-[#666] hover:border-[#444] hover:text-[#888]'
+                  ? 'border-[#E5E5E5] text-[#9CA3AF] hover:border-[#D0D0D0] hover:text-[#6B7280] bg-white'
                   : vistoria.aprovado
-                  ? 'border-green-600/40 text-green-400 bg-green-600/10'
-                  : 'border-yellow-600/40 text-yellow-400 bg-yellow-600/10'
+                  ? 'border-green-200 text-green-700 bg-green-50'
+                  : 'border-amber-200 text-amber-700 bg-amber-50'
               }`}
             >
               {vistoria === null ? '⚠️ Vistoria pendente' : vistoria.aprovado ? '✅ Vistoria aprovada' : '❌ Vistoria reprovada'}
             </a>
-            {/* PDF buttons */}
             <a
               href={`/api/pdf/ficha/${id}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#1A1A1A] border border-[#2A2A2A] text-[#888] text-xs font-medium hover:text-white hover:border-[#333] transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-[#E5E5E5] text-[#6B7280] text-xs font-medium hover:text-[#111] hover:border-[#D0D0D0] transition-colors"
             >
               📄 Ficha
             </a>
@@ -92,7 +90,7 @@ export default async function EditarVeiculoPage({
               href={`/api/pdf/etiqueta/${id}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#1A1A1A] border border-[#2A2A2A] text-[#888] text-xs font-medium hover:text-white hover:border-[#333] transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-[#E5E5E5] text-[#6B7280] text-xs font-medium hover:text-[#111] hover:border-[#D0D0D0] transition-colors"
             >
               🏷️ Etiqueta
             </a>
@@ -100,7 +98,7 @@ export default async function EditarVeiculoPage({
               href={`/api/pdf/contrato/${id}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#1A1A1A] border border-[#2A2A2A] text-[#888] text-xs font-medium hover:text-white hover:border-[#333] transition-colors"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-[#E5E5E5] text-[#6B7280] text-xs font-medium hover:text-[#111] hover:border-[#D0D0D0] transition-colors"
             >
               📋 Contrato
             </a>

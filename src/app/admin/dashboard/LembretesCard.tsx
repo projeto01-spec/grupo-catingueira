@@ -5,10 +5,26 @@ import { useRouter } from 'next/navigation'
 import { concluirLembrete } from '@/app/actions'
 import type { Lembrete } from '@/types'
 
+function buildWaHref(telefone: string | undefined, msg: string) {
+  if (!telefone) return '#'
+  const d = telefone.replace(/\D/g, '')
+  const full = d.startsWith('55') ? d : `55${d}`
+  return `https://wa.me/${full}?text=${encodeURIComponent(msg)}`
+}
+
+const tipoBadge: Record<string, string> = {
+  pos_venda: 'bg-blue-50 text-blue-700',
+  aniversario_compra: 'bg-purple-50 text-purple-700',
+  aniversario_cliente: 'bg-pink-50 text-pink-700',
+  financiamento: 'bg-amber-50 text-amber-700',
+  visita: 'bg-green-50 text-green-700',
+  personalizado: 'bg-gray-100 text-gray-600',
+}
+
 const tipoLabel: Record<string, string> = {
   pos_venda: 'Pós-venda',
-  aniversario_compra: 'Aniversário de compra',
-  aniversario_cliente: 'Aniversário do cliente',
+  aniversario_compra: 'Aniversário',
+  aniversario_cliente: 'Aniversário cliente',
   financiamento: 'Financiamento',
   visita: 'Visita',
   personalizado: 'Personalizado',
@@ -16,65 +32,62 @@ const tipoLabel: Record<string, string> = {
 
 export default function LembretesCard({ lembretes }: { lembretes: Lembrete[] }) {
   const router = useRouter()
-  const [concluindo, setConcluindo] = useState<string | null>(null)
-  const [lista, setLista] = useState(lembretes)
+  const [loading, setLoading] = useState<string | null>(null)
 
   async function handleConcluir(id: string) {
-    setConcluindo(id)
+    setLoading(id)
     try {
       await concluirLembrete(id)
-      setLista(prev => prev.filter(l => l.id !== id))
       router.refresh()
     } finally {
-      setConcluindo(null)
+      setLoading(null)
     }
   }
 
-  if (lista.length === 0) return null
-
   return (
-    <div className="bg-[#1A1A1A] border border-yellow-500/20 rounded-xl overflow-hidden">
-      <div className="px-5 py-4 border-b border-[#2A2A2A] flex items-center gap-2">
-        <span className="text-yellow-400">⏰</span>
-        <h2 className="text-white font-semibold text-sm">Lembretes de hoje</h2>
-        <span className="ml-auto bg-yellow-500/20 text-yellow-400 text-xs px-2 py-0.5 rounded-full font-medium">
-          {lista.length}
+    <div className="bg-white border border-[#E5E5E5] rounded-xl overflow-hidden shadow-sm">
+      <div className="px-5 py-4 border-b border-[#E5E5E5] flex items-center gap-2">
+        <span className="text-sm font-semibold text-[#111]">Lembretes de hoje</span>
+        <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-medium border border-amber-200">
+          {lembretes.length}
         </span>
       </div>
-      <div className="divide-y divide-[#1E1E1E]">
-        {lista.map(l => {
-          const waNum = l.lead?.telefone ? `55${l.lead.telefone.replace(/\D/g, '')}` : null
-          const msg = l.mensagem ?? ''
-          const waHref = waNum ? `https://wa.me/${waNum}?text=${encodeURIComponent(msg)}` : null
-
+      <div className="divide-y divide-[#F0F0F0]">
+        {lembretes.map(l => {
+          const telefone = l.lead?.telefone
+          const nomeRef = l.lead?.nome ?? (l.veiculo ? `${l.veiculo.marca} ${l.veiculo.modelo} ${l.veiculo.ano}` : 'Lembrete')
+          const waMsg = `Olá${l.lead?.nome ? ` ${l.lead.nome}` : ''}, ${l.mensagem ?? 'entrando em contato conforme combinado.'}`
+          const waHref = buildWaHref(telefone, waMsg)
           return (
-            <div key={l.id} className="px-5 py-3 flex items-center justify-between gap-4">
+            <div key={l.id} className="px-5 py-4 flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-white text-sm font-medium truncate">
-                  {l.lead?.nome ?? (l.veiculo ? `${l.veiculo.marca} ${l.veiculo.modelo} ${l.veiculo.ano}` : 'Lembrete')}
-                </p>
-                <p className="text-[#555] text-xs mt-0.5">
-                  {tipoLabel[l.tipo] ?? l.tipo} — {new Date(l.data_lembrete).toLocaleDateString('pt-BR')}
-                </p>
-                {l.mensagem && <p className="text-[#666] text-xs mt-0.5 truncate">{l.mensagem}</p>}
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${tipoBadge[l.tipo] ?? 'bg-gray-100 text-gray-600'}`}>
+                    {tipoLabel[l.tipo] ?? l.tipo}
+                  </span>
+                </div>
+                <p className="text-[#111] text-sm font-medium truncate">{nomeRef}</p>
+                {l.mensagem && (
+                  <p className="text-[#6B7280] text-xs mt-0.5 line-clamp-1">{l.mensagem}</p>
+                )}
               </div>
               <div className="flex gap-2 shrink-0">
-                {waHref && (
+                {telefone && (
                   <a
                     href={waHref}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-xs px-2.5 py-1.5 rounded-md bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366]/20 transition-colors"
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#25D366]/10 text-[#25D366] text-xs font-medium hover:bg-[#25D366]/20 transition-colors"
                   >
                     WhatsApp
                   </a>
                 )}
                 <button
                   onClick={() => handleConcluir(l.id)}
-                  disabled={concluindo === l.id}
-                  className="text-xs px-2.5 py-1.5 rounded-md border border-[#2A2A2A] text-[#666] hover:text-green-400 hover:border-green-400/30 transition-colors disabled:opacity-50"
+                  disabled={loading === l.id}
+                  className="px-2.5 py-1.5 rounded-lg bg-[#F0F0F0] text-[#6B7280] text-xs font-medium hover:bg-[#E5E5E5] transition-colors disabled:opacity-50"
                 >
-                  {concluindo === l.id ? '...' : 'Concluir'}
+                  {loading === l.id ? '...' : 'Concluir'}
                 </button>
               </div>
             </div>

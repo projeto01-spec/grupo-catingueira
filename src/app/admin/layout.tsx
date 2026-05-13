@@ -44,7 +44,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   return (
     <AdminProvider value={{ perfil, loja: lojaAtiva, lojas }}>
-      <div className="min-h-screen bg-[#111111] flex">
+      <div className="min-h-screen bg-[#F8F8F8] flex">
         <AdminSidebar perfil={perfil} loja={lojaAtiva} lojas={lojas} />
         <main className="flex-1 min-w-0 overflow-auto">
           {children}

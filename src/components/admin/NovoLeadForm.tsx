@@ -48,13 +48,13 @@ export default function NovoLeadForm({ lojaId }: { lojaId: string }) {
   }
 
   const inputClass =
-    'w-full bg-[#0D0D0D] border border-[#2A2A2A] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[var(--cor-primaria)] transition-colors'
+    'w-full bg-[#F8F8F8] border border-[#E5E5E5] rounded-lg px-3 py-2 text-[#111] text-sm focus:outline-none focus:border-[var(--cor-primaria)] transition-colors placeholder-[#D0D0D0]'
 
   if (!aberto) {
     return (
       <button
         onClick={() => setAberto(true)}
-        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-[#2A2A2A] text-sm text-[#888] hover:text-white hover:border-[#333] transition-colors"
+        className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-[#E5E5E5] text-sm text-[#6B7280] hover:text-[#111] hover:border-[#D0D0D0] transition-colors bg-white"
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -65,10 +65,10 @@ export default function NovoLeadForm({ lojaId }: { lojaId: string }) {
   }
 
   return (
-    <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-5">
+    <div className="bg-white border border-[#E5E5E5] rounded-xl p-5 shadow-sm">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-white font-semibold text-sm uppercase tracking-wider">Novo Lead</h2>
-        <button onClick={() => setAberto(false)} className="text-[#555] hover:text-white transition-colors">
+        <h2 className="text-[#111] font-semibold text-sm uppercase tracking-wider">Novo Lead</h2>
+        <button onClick={() => setAberto(false)} className="text-[#9CA3AF] hover:text-[#111] transition-colors">
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
@@ -77,11 +77,11 @@ export default function NovoLeadForm({ lojaId }: { lojaId: string }) {
       <form onSubmit={handleSubmit(onSubmit)} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <div>
           <input {...register('nome')} className={inputClass} placeholder="Nome *" />
-          {errors.nome && <p className="text-red-400 text-xs mt-1">{errors.nome.message}</p>}
+          {errors.nome && <p className="text-red-600 text-xs mt-1">{errors.nome.message}</p>}
         </div>
         <div>
           <input {...register('telefone')} className={inputClass} placeholder="Telefone *" />
-          {errors.telefone && <p className="text-red-400 text-xs mt-1">{errors.telefone.message}</p>}
+          {errors.telefone && <p className="text-red-600 text-xs mt-1">{errors.telefone.message}</p>}
         </div>
         <div>
           <select {...register('origem')} className={inputClass}>
@@ -99,14 +99,14 @@ export default function NovoLeadForm({ lojaId }: { lojaId: string }) {
           <button
             type="button"
             onClick={() => setAberto(false)}
-            className="px-4 py-2 text-sm text-[#666] border border-[#2A2A2A] rounded-lg hover:text-white hover:border-[#333] transition-colors"
+            className="px-4 py-2 text-sm text-[#6B7280] border border-[#E5E5E5] rounded-lg hover:text-[#111] hover:border-[#D0D0D0] transition-colors bg-white"
           >
             Cancelar
           </button>
           <button
             type="submit"
             disabled={salvando}
-            className="px-6 py-2 text-sm font-bold text-[#0D0D0D] rounded-lg transition-all hover:brightness-90 disabled:opacity-50"
+            className="px-6 py-2 text-sm font-bold text-[#111] rounded-lg transition-all hover:brightness-90 disabled:opacity-50"
             style={{ backgroundColor: 'var(--cor-primaria)' }}
           >
             {salvando ? 'Salvando...' : 'Salvar lead'}

@@ -28,11 +28,11 @@ export default function MarcaVendidoButton({ veiculoId }: { veiculoId: string })
       <button
         onClick={handleClick}
         disabled={carregando}
-        className="text-xs text-[#666] hover:text-green-400 px-2.5 py-1.5 rounded-md border border-[#2A2A2A] hover:border-green-400/30 transition-colors disabled:opacity-50"
+        className="text-xs text-[#6B7280] hover:text-green-700 px-2.5 py-1.5 rounded-md border border-[#E5E5E5] hover:border-green-300 hover:bg-green-50 transition-colors disabled:opacity-50 bg-white"
       >
         {carregando ? '...' : 'Vendido'}
       </button>
-      {erro && <p className="text-red-400 text-xs">{erro}</p>}
+      {erro && <p className="text-red-600 text-xs">{erro}</p>}
     </div>
   )
 }

@@ -15,19 +15,19 @@ interface Props {
 }
 
 const statusBadge: Record<string, string> = {
-  novo: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  contato_feito: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-  negociando: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-  fechado: 'bg-green-600/20 text-green-400 border-green-600/30',
-  perdido: 'bg-red-600/20 text-red-400 border-red-600/30',
+  novo: 'bg-blue-50 text-blue-700 border-blue-200',
+  contato_feito: 'bg-amber-50 text-amber-700 border-amber-200',
+  negociando: 'bg-orange-50 text-orange-700 border-orange-200',
+  fechado: 'bg-green-50 text-green-700 border-green-200',
+  perdido: 'bg-red-50 text-red-700 border-red-200',
 }
 
 const origemBadge: Record<string, string> = {
-  site: 'bg-purple-500/20 text-purple-400',
-  whatsapp: 'bg-green-500/20 text-green-400',
-  instagram: 'bg-pink-500/20 text-pink-400',
-  indicacao: 'bg-blue-400/20 text-blue-300',
-  outros: 'bg-gray-500/20 text-gray-400',
+  site: 'bg-purple-50 text-purple-700',
+  whatsapp: 'bg-green-50 text-green-700',
+  instagram: 'bg-pink-50 text-pink-700',
+  indicacao: 'bg-blue-50 text-blue-700',
+  outros: 'bg-gray-100 text-gray-600',
 }
 
 const statusOpts = [
@@ -48,13 +48,7 @@ const origemOpts = [
   { value: 'outros', label: 'Outros' },
 ]
 
-export default function CrmClient({
-  leads,
-  vendedores,
-  lojaId,
-  statusFilter,
-  origemFilter,
-}: Props) {
+export default function CrmClient({ leads, vendedores, lojaId, statusFilter, origemFilter }: Props) {
   const [view, setView] = useState<'lista' | 'kanban'>('lista')
 
   const filteredLeads = leads.filter(l => {
@@ -69,10 +63,10 @@ export default function CrmClient({
     <div className="p-6 md:p-8">
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="font-[family-name:var(--font-barlow-condensed)] text-3xl font-black uppercase text-white">
+          <h1 className="font-[family-name:var(--font-barlow-condensed)] text-3xl font-black uppercase text-[#111]">
             CRM — Leads
           </h1>
-          <p className="text-[#555] text-sm mt-1">{leads.length} lead(s)</p>
+          <p className="text-[#6B7280] text-sm mt-1">{leads.length} lead(s)</p>
         </div>
         <div className="flex items-center gap-2">
           {(['lista', 'kanban'] as const).map(v => (
@@ -81,8 +75,8 @@ export default function CrmClient({
               onClick={() => setView(v)}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors capitalize ${
                 view === v
-                  ? 'border-[var(--cor-primaria)] text-[var(--cor-primaria)]'
-                  : 'border-[#2A2A2A] text-[#555] hover:text-[#888]'
+                  ? 'border-[var(--cor-primaria)] text-[var(--cor-primaria)] bg-white'
+                  : 'border-[#E5E5E5] text-[#6B7280] hover:text-[#111] bg-white'
               }`}
             >
               {v}
@@ -101,16 +95,16 @@ export default function CrmClient({
                   ? `/admin/crm?status=${opt.value}${origemFilter ? `&origem=${origemFilter}` : ''}`
                   : `/admin/crm${origemFilter ? `?origem=${origemFilter}` : ''}`
               }
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors bg-white ${
                 statusFilter === opt.value || (!statusFilter && opt.value === '')
                   ? 'border-[var(--cor-primaria)] text-[var(--cor-primaria)]'
-                  : 'border-[#2A2A2A] text-[#666] hover:border-[#333] hover:text-[#888]'
+                  : 'border-[#E5E5E5] text-[#6B7280] hover:border-[#D0D0D0] hover:text-[#374151]'
               }`}
             >
               {opt.label}
             </a>
           ))}
-          <div className="w-px bg-[#2A2A2A] mx-1" />
+          <div className="w-px bg-[#E5E5E5] mx-1" />
           {origemOpts.map(opt => (
             <a
               key={opt.value}
@@ -119,10 +113,10 @@ export default function CrmClient({
                   ? `/admin/crm${statusFilter ? `?status=${statusFilter}&` : '?'}origem=${opt.value}`
                   : `/admin/crm${statusFilter ? `?status=${statusFilter}` : ''}`
               }
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors bg-white ${
                 origemFilter === opt.value || (!origemFilter && opt.value === '')
                   ? 'border-[var(--cor-primaria)] text-[var(--cor-primaria)]'
-                  : 'border-[#2A2A2A] text-[#666] hover:border-[#333] hover:text-[#888]'
+                  : 'border-[#E5E5E5] text-[#6B7280] hover:border-[#D0D0D0] hover:text-[#374151]'
               }`}
             >
               {opt.label}
@@ -138,40 +132,40 @@ export default function CrmClient({
       {view === 'kanban' ? (
         <CrmKanban leads={leads} vendedorMap={vendedorMap} />
       ) : (
-        <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl overflow-hidden">
+        <div className="bg-white border border-[#E5E5E5] rounded-xl overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-[#2A2A2A]">
+                <tr className="border-b border-[#E5E5E5] bg-[#F8F8F8]">
                   {['Nome', 'Telefone', 'Veículo', 'Origem', 'Status', 'Responsável', 'Data', 'Ação'].map(h => (
-                    <th key={h} className="text-left px-4 py-3 text-[#555] font-medium text-xs uppercase tracking-wider whitespace-nowrap">
+                    <th key={h} className="text-left px-4 py-3 text-[#9CA3AF] font-medium text-xs uppercase tracking-wider whitespace-nowrap">
                       {h}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#1E1E1E]">
+              <tbody className="divide-y divide-[#F0F0F0]">
                 {filteredLeads.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-12 text-center text-[#555] text-sm">
+                    <td colSpan={8} className="px-4 py-12 text-center text-[#9CA3AF] text-sm">
                       Nenhum lead encontrado.
                     </td>
                   </tr>
                 ) : (
-                  filteredLeads.map((l, i) => {
+                  filteredLeads.map(l => {
                     const whatsappLink = `https://wa.me/55${l.telefone.replace(/\D/g, '')}`
                     const dataFmt = new Date(l.created_at).toLocaleDateString('pt-BR', {
                       day: '2-digit', month: '2-digit', year: '2-digit',
                     })
                     return (
-                      <tr key={l.id} className={i % 2 === 0 ? 'bg-[#1A1A1A]' : 'bg-[#141414]'}>
-                        <td className="px-4 py-3 text-white font-medium">
+                      <tr key={l.id} className="hover:bg-[#FAFAFA] transition-colors">
+                        <td className="px-4 py-3 text-[#111] font-medium">
                           <Link href={`/admin/leads/${l.id}`} className="hover:underline underline-offset-2">
                             {l.nome}
                           </Link>
                         </td>
-                        <td className="px-4 py-3 text-[#888]">{l.telefone}</td>
-                        <td className="px-4 py-3 text-[#888] whitespace-nowrap">
+                        <td className="px-4 py-3 text-[#6B7280]">{l.telefone}</td>
+                        <td className="px-4 py-3 text-[#6B7280] whitespace-nowrap">
                           {l.veiculo
                             ? `${l.veiculo.marca} ${l.veiculo.modelo} ${l.veiculo.ano}`
                             : l.veiculo_interesse || '—'}
@@ -186,16 +180,16 @@ export default function CrmClient({
                             {l.status.replace('_', ' ')}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-[#666] text-xs">
+                        <td className="px-4 py-3 text-[#6B7280] text-xs">
                           {l.responsavel_id ? vendedorMap[l.responsavel_id] ?? '—' : '—'}
                         </td>
-                        <td className="px-4 py-3 text-[#555] whitespace-nowrap">{dataFmt}</td>
+                        <td className="px-4 py-3 text-[#9CA3AF] whitespace-nowrap">{dataFmt}</td>
                         <td className="px-4 py-3">
                           <a
                             href={whatsappLink}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#25D366]/10 text-[#25D366] text-xs font-medium hover:bg-[#25D366]/20 transition-colors"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#25D366]/10 text-[#16A34A] text-xs font-medium hover:bg-[#25D366]/20 transition-colors"
                           >
                             WhatsApp
                           </a>

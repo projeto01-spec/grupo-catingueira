@@ -84,10 +84,10 @@ const menuItems = [
 ]
 
 const perfilBadgeClass: Record<string, string> = {
-  vendedor: 'bg-[#1A1A1A] text-[#888]',
-  gerente: 'bg-blue-500/10 text-blue-400',
-  diretor: 'bg-purple-500/10 text-purple-400',
-  admin: 'bg-red-500/10 text-red-400',
+  vendedor: 'bg-gray-100 text-gray-600',
+  gerente: 'bg-blue-50 text-blue-600',
+  diretor: 'bg-purple-50 text-purple-600',
+  admin: 'bg-red-50 text-red-600',
 }
 
 export default function AdminSidebar({ perfil, loja, lojas }: AdminSidebarProps) {
@@ -119,23 +119,23 @@ export default function AdminSidebar({ perfil, loja, lojas }: AdminSidebarProps)
 
   const sidebar = (
     <div
-      className="w-60 shrink-0 flex flex-col h-full border-r"
-      style={{ backgroundColor: '#0A0A0A', borderColor: '#1A1A1A' }}
+      className="w-60 shrink-0 flex flex-col h-full"
+      style={{ backgroundColor: '#FAFAFA', borderRight: '1px solid #E5E5E5' }}
     >
       {/* Header: logo + nome da loja */}
-      <div className="px-4 py-5" style={{ borderBottom: '1px solid #1A1A1A' }}>
+      <div className="px-4 py-5" style={{ borderBottom: '1px solid #E5E5E5' }}>
         <div className="flex items-center gap-3">
           <div
             className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black shrink-0"
-            style={{ backgroundColor: corPrimaria, color: '#0A0A0A' }}
+            style={{ backgroundColor: corPrimaria, color: '#111111' }}
           >
             {lojaInitials}
           </div>
           <div className="min-w-0">
-            <p className="text-white text-sm font-bold truncate leading-tight">
+            <p className="text-[#111] text-sm font-bold truncate leading-tight">
               {loja?.nome ?? 'Grupo Catingueira'}
             </p>
-            <p className="text-[#444] text-xs">Painel admin</p>
+            <p className="text-[#9CA3AF] text-xs">Painel admin</p>
           </div>
         </div>
       </div>
@@ -146,8 +146,7 @@ export default function AdminSidebar({ perfil, loja, lojas }: AdminSidebarProps)
           <select
             defaultValue={loja?.id ?? ''}
             onChange={e => handleLojaChange(e.target.value)}
-            className="w-full rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none transition-colors"
-            style={{ backgroundColor: '#141414', border: '1px solid #222' }}
+            className="w-full rounded-lg px-3 py-1.5 text-xs text-[#374151] bg-white border border-[#E5E5E5] focus:outline-none focus:border-[var(--cor-primaria)] transition-colors"
           >
             {lojas.map(l => (
               <option key={l.id} value={l.id}>
@@ -161,16 +160,15 @@ export default function AdminSidebar({ perfil, loja, lojas }: AdminSidebarProps)
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 flex flex-col gap-0.5">
         {filteredMenu.map(item => {
-          const active =
-            pathname === item.href || pathname.startsWith(item.href + '/')
+          const active = pathname === item.href || pathname.startsWith(item.href + '/')
           return (
             <Link
               key={item.href}
               href={item.href}
               className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors relative ${
                 active
-                  ? 'text-white bg-[#1A1A1A]'
-                  : 'text-[#555] hover:text-white hover:bg-[#111]'
+                  ? 'text-[#111111] bg-[#F0F0F0]'
+                  : 'text-[#6B7280] hover:text-[#111111] hover:bg-[#F5F5F5]'
               }`}
             >
               {active && (
@@ -187,13 +185,16 @@ export default function AdminSidebar({ perfil, loja, lojas }: AdminSidebarProps)
       </nav>
 
       {/* Footer: user + actions */}
-      <div className="px-3 py-4" style={{ borderTop: '1px solid #1A1A1A' }}>
+      <div className="px-3 py-4" style={{ borderTop: '1px solid #E5E5E5' }}>
         <div className="flex items-center gap-2.5 mb-3 px-1">
-          <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 text-[#888]" style={{ backgroundColor: '#1A1A1A' }}>
+          <div
+            className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 text-[#6B7280]"
+            style={{ backgroundColor: '#F0F0F0' }}
+          >
             {initials}
           </div>
           <div className="min-w-0">
-            <p className="text-white text-xs font-medium truncate leading-tight">
+            <p className="text-[#111] text-xs font-medium truncate leading-tight">
               {perfil?.nome ?? 'Usuário'}
             </p>
             <span className={`text-[10px] px-1.5 py-0.5 rounded capitalize font-medium ${perfilBadgeClass[perfil?.perfil ?? 'vendedor']}`}>
@@ -205,15 +206,13 @@ export default function AdminSidebar({ perfil, loja, lojas }: AdminSidebarProps)
           <a
             href="/"
             target="_blank"
-            className="flex-1 py-1.5 rounded-md text-xs text-[#555] hover:text-white text-center transition-colors"
-            style={{ border: '1px solid #1A1A1A' }}
+            className="flex-1 py-1.5 rounded-md text-xs text-[#6B7280] hover:text-[#111] text-center transition-colors border border-[#E5E5E5] hover:border-[#D0D0D0] bg-white"
           >
             Ver site
           </a>
           <button
             onClick={sair}
-            className="flex-1 py-1.5 rounded-md text-xs text-[#555] hover:text-red-400 transition-colors"
-            style={{ border: '1px solid #1A1A1A' }}
+            className="flex-1 py-1.5 rounded-md text-xs text-[#6B7280] hover:text-red-600 transition-colors border border-[#E5E5E5] hover:border-red-200 bg-white"
           >
             Sair
           </button>
@@ -227,10 +226,10 @@ export default function AdminSidebar({ perfil, loja, lojas }: AdminSidebarProps)
       <div className="md:hidden fixed top-3 left-3 z-50">
         <button
           onClick={() => setMobileAberto(!mobileAberto)}
-          className="rounded-lg p-2"
-          style={{ backgroundColor: '#0A0A0A', border: '1px solid #222' }}
+          className="rounded-lg p-2 bg-white shadow-sm"
+          style={{ border: '1px solid #E5E5E5' }}
         >
-          <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="w-5 h-5 text-[#374151]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
           </svg>
         </button>
@@ -238,7 +237,7 @@ export default function AdminSidebar({ perfil, loja, lojas }: AdminSidebarProps)
 
       {mobileAberto && (
         <div
-          className="fixed inset-0 z-40 bg-black/70 md:hidden"
+          className="fixed inset-0 z-40 bg-black/30 md:hidden"
           onClick={() => setMobileAberto(false)}
         />
       )}
