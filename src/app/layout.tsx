@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Barlow, Barlow_Condensed } from 'next/font/google'
+import { GoogleAnalytics } from '@next/third-parties/google'
 import './globals.css'
 import { getLoja } from '@/lib/getLoja'
 import { LojaProvider } from '@/contexts/LojaContext'
@@ -27,6 +28,8 @@ export const metadata: Metadata = {
   description:
     '30 anos realizando sonhos. Veículos seminovos com procedência garantida, atendimento transparente e financiamento fácil em Patos, Paraíba.',
 }
+
+const gaId = process.env.NEXT_PUBLIC_GA_ID
 
 export default async function RootLayout({
   children,
@@ -56,6 +59,7 @@ export default async function RootLayout({
           <Footer />
         </LojaProvider>
       </body>
+      {gaId && <GoogleAnalytics gaId={gaId} />}
     </html>
   )
 }

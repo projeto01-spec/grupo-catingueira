@@ -52,7 +52,7 @@ export default function Header() {
     { label: 'Estoque', href: '/estoque' },
     { label: 'Sobre Nós', href: '/sobre' },
     { label: 'Localização', href: '/localizacao' },
-    { label: 'Contato', href: waHref, external: true },
+    { label: 'Contato', href: '/contato' },
   ]
 
   useEffect(() => { setOpen(false) }, [pathname])

@@ -2,6 +2,7 @@ export type StatusVeiculo = 'disponivel' | 'reservado' | 'vendido' | 'manutencao
 export type Perfil = 'vendedor' | 'gerente' | 'diretor' | 'admin'
 export type StatusLead = 'novo' | 'contato_feito' | 'negociando' | 'fechado' | 'perdido'
 export type OrigemLead = 'site' | 'whatsapp' | 'instagram' | 'indicacao' | 'outros'
+export type TipoInteracao = 'nota' | 'whatsapp' | 'ligacao' | 'visita' | 'proposta' | 'site'
 
 export interface Loja {
   id: string
@@ -73,6 +74,10 @@ export interface Lead {
   origem: OrigemLead
   status: StatusLead
   observacoes: string | null
+  responsavel_id: string | null
+  tags: string[]
+  data_contato: string | null
+  veiculo_interesse: string | null
   created_at: string
 }
 
@@ -83,5 +88,49 @@ export interface UsuarioPerfil {
   perfil: Perfil
   nome: string
   ativo: boolean
+  created_at: string
+}
+
+export interface LeadInteracao {
+  id: string
+  lead_id: string
+  loja_id: string
+  usuario_id: string | null
+  tipo: TipoInteracao
+  descricao: string
+  created_at: string
+  usuario?: Pick<UsuarioPerfil, 'nome'> | null
+}
+
+export interface MensagemPadrao {
+  id: string
+  loja_id: string
+  titulo: string
+  mensagem: string
+  created_at: string
+}
+
+export interface Lembrete {
+  id: string
+  loja_id: string
+  lead_id: string | null
+  veiculo_id: string | null
+  tipo: 'pos_venda' | 'aniversario_compra' | 'aniversario_cliente' | 'financiamento' | 'visita' | 'personalizado'
+  data_lembrete: string
+  mensagem: string | null
+  concluido: boolean
+  created_at: string
+  lead?: Pick<Lead, 'nome' | 'telefone'> | null
+  veiculo?: Pick<Veiculo, 'marca' | 'modelo' | 'ano'> | null
+}
+
+export interface VistoriaVeiculo {
+  id: string
+  veiculo_id: string
+  loja_id: string
+  inspetor_id: string
+  itens: Record<string, 'ok' | 'nok' | 'na'>
+  observacoes: string | null
+  aprovado: boolean
   created_at: string
 }

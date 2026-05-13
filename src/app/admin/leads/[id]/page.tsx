@@ -1,7 +1,8 @@
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createServerSupabase } from '@/lib/supabase-server'
-import type { Lead, UsuarioPerfil } from '@/types'
+import { getLojaIdAtiva } from '@/lib/getLojaIdAtiva'
+import type { Lead, LeadInteracao, MensagemPadrao, UsuarioPerfil } from '@/types'
 import LeadDetailClient from './LeadDetailClient'
 
 export default async function LeadDetailPage({
@@ -22,30 +23,44 @@ export default async function LeadDetailPage({
     .select('*')
     .eq('id', user.id)
     .single()
-
   if (!perfilData) redirect('/login')
   const perfil = perfilData as UsuarioPerfil
 
-  const { data } = await supabase
-    .from('leads')
-    .select('*, veiculo:veiculos(id, marca, modelo, ano)')
-    .eq('id', id)
-    .eq('loja_id', perfil.loja_id)
-    .single()
+  const lojaId = await getLojaIdAtiva(perfil)
 
-  if (!data) notFound()
-  const lead = data as Lead
+  const [{ data: leadData }, { data: interacoesData }, { data: vendedoresData }, { data: templatesData }] =
+    await Promise.all([
+      supabase
+        .from('leads')
+        .select('*, veiculo:veiculos(id, marca, modelo, ano)')
+        .eq('id', id)
+        .eq('loja_id', lojaId)
+        .single(),
+      supabase
+        .from('lead_interacoes')
+        .select('*')
+        .eq('lead_id', id)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('usuarios_perfil')
+        .select('id, nome')
+        .eq('loja_id', lojaId),
+      supabase
+        .from('mensagens_padrao')
+        .select('*')
+        .eq('loja_id', lojaId)
+        .order('titulo'),
+    ])
 
-  const dataFmt = new Date(lead.created_at).toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  if (!leadData) notFound()
+
+  const lead = leadData as Lead
+  const interacoes = (interacoesData ?? []) as LeadInteracao[]
+  const vendedores = (vendedoresData ?? []) as { id: string; nome: string }[]
+  const templates = (templatesData ?? []) as MensagemPadrao[]
 
   return (
-    <div className="p-6 md:p-8 max-w-2xl">
+    <div className="p-6 md:p-8 max-w-3xl">
       <div className="mb-8">
         <Link
           href="/admin/crm"
@@ -59,36 +74,22 @@ export default async function LeadDetailPage({
         <h1 className="font-[family-name:var(--font-barlow-condensed)] text-3xl font-black uppercase text-white">
           {lead.nome}
         </h1>
-        <p className="text-[#555] text-sm mt-1">{dataFmt}</p>
+        <p className="text-[#555] text-sm mt-1">
+          {new Date(lead.created_at).toLocaleDateString('pt-BR', {
+            day: '2-digit', month: 'long', year: 'numeric',
+            hour: '2-digit', minute: '2-digit',
+          })}
+        </p>
       </div>
 
-      <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-6 mb-6 grid grid-cols-2 gap-5">
-        <div>
-          <p className="text-[#555] text-xs uppercase tracking-wider mb-1">Telefone</p>
-          <a
-            href={`https://wa.me/55${lead.telefone.replace(/\D/g, '')}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-white text-sm font-medium hover:text-[var(--cor-primaria)] transition-colors"
-          >
-            {lead.telefone}
-          </a>
-        </div>
-        <div>
-          <p className="text-[#555] text-xs uppercase tracking-wider mb-1">Origem</p>
-          <p className="text-white text-sm font-medium capitalize">{lead.origem}</p>
-        </div>
-        <div>
-          <p className="text-[#555] text-xs uppercase tracking-wider mb-1">Veículo de interesse</p>
-          <p className="text-white text-sm font-medium">
-            {lead.veiculo
-              ? `${lead.veiculo.marca} ${lead.veiculo.modelo} ${lead.veiculo.ano}`
-              : '—'}
-          </p>
-        </div>
-      </div>
-
-      <LeadDetailClient lead={lead} />
+      <LeadDetailClient
+        lead={lead}
+        interacoes={interacoes}
+        vendedores={vendedores}
+        templates={templates}
+        lojaId={lojaId}
+        userId={user.id}
+      />
     </div>
   )
 }

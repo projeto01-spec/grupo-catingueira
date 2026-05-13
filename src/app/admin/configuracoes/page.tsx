@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createServerSupabase } from '@/lib/supabase-server'
 import { getLojaIdAtiva } from '@/lib/getLojaIdAtiva'
-import type { Loja, UsuarioPerfil } from '@/types'
+import type { Loja, MensagemPadrao, UsuarioPerfil } from '@/types'
 import ConfiguracoesForm from './ConfiguracoesForm'
 
 export default async function ConfiguracoesPage() {
@@ -24,10 +24,17 @@ export default async function ConfiguracoesPage() {
 
   const lojaId = await getLojaIdAtiva(perfil)
 
-  const { data } = await supabase.from('lojas').select('*').eq('id', lojaId).single()
-  if (!data) redirect('/admin/dashboard')
+  const [{ data: lojaData }, { data: templatesData }] = await Promise.all([
+    supabase.from('lojas').select('*').eq('id', lojaId).single(),
+    supabase.from('mensagens_padrao').select('*').eq('loja_id', lojaId).order('titulo'),
+  ])
 
-  const loja = data as Loja
+  if (!lojaData) redirect('/admin/dashboard')
 
-  return <ConfiguracoesForm loja={loja} />
+  return (
+    <ConfiguracoesForm
+      loja={lojaData as Loja}
+      templates={(templatesData ?? []) as MensagemPadrao[]}
+    />
+  )
 }

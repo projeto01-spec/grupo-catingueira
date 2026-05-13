@@ -4,7 +4,7 @@ import { cookies } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 import { createServerClient } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
-import type { Perfil } from '@/types'
+import type { Perfil, TipoInteracao } from '@/types'
 
 function adminSupabase() {
   return createClient(
@@ -112,7 +112,12 @@ export async function updateLojaSettings(
 
 export async function updateLead(
   leadId: string,
-  updates: { status: string; observacoes: string | null }
+  updates: {
+    status?: string
+    observacoes?: string | null
+    responsavel_id?: string | null
+    data_contato?: string | null
+  }
 ) {
   const supabase = await userSupabase()
   const { error } = await supabase
@@ -122,4 +127,182 @@ export async function updateLead(
   if (error) throw new Error(error.message)
   revalidatePath('/admin/leads/' + leadId)
   revalidatePath('/admin/crm')
+}
+
+export async function addLeadInteracao(
+  leadId: string,
+  lojaId: string,
+  tipo: TipoInteracao,
+  descricao: string
+) {
+  const supabase = await userSupabase()
+  const { data: { session } } = await supabase.auth.getSession()
+  const { error } = await supabase.from('lead_interacoes').insert({
+    lead_id: leadId,
+    loja_id: lojaId,
+    usuario_id: session?.user.id ?? null,
+    tipo,
+    descricao,
+  })
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin/leads/' + leadId)
+}
+
+export async function saveMensagemPadrao(
+  lojaId: string,
+  titulo: string,
+  mensagem: string,
+  id?: string
+) {
+  const supabase = await userSupabase()
+  if (id) {
+    const { error } = await supabase
+      .from('mensagens_padrao')
+      .update({ titulo, mensagem })
+      .eq('id', id)
+    if (error) throw new Error(error.message)
+  } else {
+    const { error } = await supabase.from('mensagens_padrao').insert({
+      loja_id: lojaId,
+      titulo,
+      mensagem,
+    })
+    if (error) throw new Error(error.message)
+  }
+  revalidatePath('/admin/configuracoes')
+}
+
+export async function deleteMensagemPadrao(id: string) {
+  const supabase = await userSupabase()
+  const { error } = await supabase.from('mensagens_padrao').delete().eq('id', id)
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin/configuracoes')
+}
+
+export async function concluirLembrete(id: string) {
+  const supabase = await userSupabase()
+  const { error } = await supabase
+    .from('lembretes')
+    .update({ concluido: true })
+    .eq('id', id)
+  if (error) throw new Error(error.message)
+  revalidatePath('/admin/dashboard')
+}
+
+export async function marcarVeiculoVendido(veiculoId: string) {
+  const supabase = adminSupabase()
+  const { data: veiculo } = await supabase
+    .from('veiculos')
+    .select('loja_id')
+    .eq('id', veiculoId)
+    .single()
+  if (!veiculo) throw new Error('Veículo não encontrado')
+
+  const { error } = await supabase
+    .from('veiculos')
+    .update({ status: 'vendido' })
+    .eq('id', veiculoId)
+  if (error) throw new Error(error.message)
+
+  const hoje = new Date()
+  const dataPosvenda = new Date(hoje)
+  dataPosvenda.setDate(dataPosvenda.getDate() + 7)
+  const dataAniversario = new Date(hoje)
+  dataAniversario.setFullYear(dataAniversario.getFullYear() + 1)
+
+  await supabase.from('lembretes').insert([
+    {
+      loja_id: veiculo.loja_id,
+      veiculo_id: veiculoId,
+      tipo: 'pos_venda',
+      data_lembrete: dataPosvenda.toISOString().split('T')[0],
+      mensagem: 'Lembrete de pós-venda — entre em contato com o cliente.',
+    },
+    {
+      loja_id: veiculo.loja_id,
+      veiculo_id: veiculoId,
+      tipo: 'aniversario_compra',
+      data_lembrete: dataAniversario.toISOString().split('T')[0],
+      mensagem: 'Aniversário de compra — ligue para o cliente!',
+    },
+  ])
+
+  revalidatePath('/admin/veiculos')
+  revalidatePath('/admin/dashboard')
+}
+
+export async function submitContatoLead(
+  lojaId: string,
+  data: {
+    nome: string
+    telefone: string
+    email: string
+    mensagem: string
+    veiculoInteresse: string
+  }
+) {
+  const supabase = adminSupabase()
+  const obs = [
+    data.email ? `E-mail: ${data.email}` : null,
+    data.veiculoInteresse ? `Veículo de interesse: ${data.veiculoInteresse}` : null,
+    data.mensagem ? `Mensagem: ${data.mensagem}` : null,
+  ]
+    .filter(Boolean)
+    .join('\n')
+
+  const { data: lead, error } = await supabase
+    .from('leads')
+    .insert({
+      loja_id: lojaId,
+      nome: data.nome,
+      telefone: data.telefone,
+      origem: 'site',
+      status: 'novo',
+      observacoes: obs || null,
+      veiculo_interesse: data.veiculoInteresse || null,
+      tags: [],
+    })
+    .select()
+    .single()
+  if (error) throw new Error(error.message)
+
+  await supabase.from('lead_interacoes').insert({
+    lead_id: lead.id,
+    loja_id: lojaId,
+    usuario_id: null,
+    tipo: 'site',
+    descricao: 'Lead gerado pelo formulário de contato do site.',
+  })
+}
+
+export async function saveVistoria(
+  veiculoId: string,
+  lojaId: string,
+  itens: Record<string, 'ok' | 'nok' | 'na'>,
+  observacoes: string,
+  aprovado: boolean,
+  vistoriaId?: string
+) {
+  const supabase = await userSupabase()
+  const { data: { session } } = await supabase.auth.getSession()
+
+  if (vistoriaId) {
+    const { error } = await supabase
+      .from('vistoria_veiculo')
+      .update({ itens, observacoes: observacoes || null, aprovado })
+      .eq('id', vistoriaId)
+    if (error) throw new Error(error.message)
+  } else {
+    const { error } = await supabase.from('vistoria_veiculo').insert({
+      veiculo_id: veiculoId,
+      loja_id: lojaId,
+      inspetor_id: session?.user.id,
+      itens,
+      observacoes: observacoes || null,
+      aprovado,
+    })
+    if (error) throw new Error(error.message)
+  }
+  revalidatePath('/admin/veiculos/' + veiculoId)
+  revalidatePath('/admin/veiculos/' + veiculoId + '/vistoria')
 }

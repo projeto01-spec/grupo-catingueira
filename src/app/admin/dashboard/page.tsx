@@ -3,7 +3,8 @@ import Link from 'next/link'
 import { createServerSupabase } from '@/lib/supabase-server'
 import { getLojaIdAtiva } from '@/lib/getLojaIdAtiva'
 import { formatarPreco } from '@/lib/utils'
-import type { Veiculo, Lead, UsuarioPerfil } from '@/types'
+import type { Veiculo, Lead, UsuarioPerfil, Lembrete } from '@/types'
+import LembretesCard from './LembretesCard'
 
 export default async function DashboardPage() {
   const supabase = await createServerSupabase()
@@ -26,6 +27,7 @@ export default async function DashboardPage() {
 
   const agora = new Date()
   const inicioMes = new Date(agora.getFullYear(), agora.getMonth(), 1).toISOString()
+  const hoje = agora.toISOString().split('T')[0]
 
   const [
     { count: totalEstoque },
@@ -34,6 +36,7 @@ export default async function DashboardPage() {
     { count: leadsNovos },
     { data: ultimosVeiculos },
     { data: ultimosLeads },
+    { data: lembretesHoje },
   ] = await Promise.all([
     supabase
       .from('veiculos')
@@ -68,48 +71,33 @@ export default async function DashboardPage() {
       .eq('loja_id', lojaId)
       .order('created_at', { ascending: false })
       .limit(5),
+    supabase
+      .from('lembretes')
+      .select('*, lead:leads(nome, telefone), veiculo:veiculos(marca, modelo, ano)')
+      .eq('loja_id', lojaId)
+      .eq('concluido', false)
+      .lte('data_lembrete', hoje)
+      .order('data_lembrete'),
   ])
 
   const lucroMedio =
     financeiros && financeiros.length > 0
       ? financeiros.reduce((acc, f) => {
-          const extras = (f.custos_adicionais as { valor: number }[]).reduce(
-            (s, c) => s + c.valor,
-            0
-          )
+          const extras = (f.custos_adicionais as { valor: number }[]).reduce((s, c) => s + c.valor, 0)
           return acc + (f.preco_venda! - f.custo_aquisicao - extras)
         }, 0) / financeiros.length
       : 0
 
   const metricas = [
-    {
-      label: 'Em estoque',
-      valor: String(totalEstoque ?? 0),
-      sub: 'veículos disponíveis',
-      cor: '#3B82F6',
-    },
-    {
-      label: 'Vendidos no mês',
-      valor: String(vendidosMes?.length ?? 0),
-      sub: 'este mês',
-      cor: '#22C55E',
-    },
-    {
-      label: 'Lucro médio',
-      valor: formatarPreco(lucroMedio),
-      sub: 'por veículo vendido',
-      cor: 'var(--cor-primaria)',
-    },
-    {
-      label: 'Leads novos',
-      valor: String(leadsNovos ?? 0),
-      sub: 'aguardando contato',
-      cor: '#F59E0B',
-    },
+    { label: 'Em estoque', valor: String(totalEstoque ?? 0), sub: 'veículos disponíveis', cor: '#3B82F6' },
+    { label: 'Vendidos no mês', valor: String(vendidosMes?.length ?? 0), sub: 'este mês', cor: '#22C55E' },
+    { label: 'Lucro médio', valor: formatarPreco(lucroMedio), sub: 'por veículo', cor: 'var(--cor-primaria)' },
+    { label: 'Leads novos', valor: String(leadsNovos ?? 0), sub: 'aguardando contato', cor: '#F59E0B' },
   ]
 
   const veiculos = (ultimosVeiculos ?? []) as Veiculo[]
   const leads = (ultimosLeads ?? []) as Lead[]
+  const lembretes = (lembretesHoje ?? []) as Lembrete[]
 
   const statusBadge: Record<string, string> = {
     disponivel: 'bg-green-600/20 text-green-400',
@@ -137,10 +125,7 @@ export default async function DashboardPage() {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {metricas.map(m => (
-          <div
-            key={m.label}
-            className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-5"
-          >
+          <div key={m.label} className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-5">
             <p className="text-[#555] text-xs uppercase tracking-wider mb-2">{m.label}</p>
             <p
               className="font-[family-name:var(--font-barlow-condensed)] text-3xl font-black"
@@ -153,40 +138,31 @@ export default async function DashboardPage() {
         ))}
       </div>
 
+      {lembretes.length > 0 && (
+        <div className="mb-6">
+          <LembretesCard lembretes={lembretes} />
+        </div>
+      )}
+
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-[#2A2A2A] flex items-center justify-between">
             <h2 className="text-white font-semibold text-sm">Últimos veículos</h2>
-            <Link
-              href="/admin/veiculos"
-              className="text-xs transition-opacity hover:opacity-70"
-              style={{ color: 'var(--cor-primaria)' }}
-            >
+            <Link href="/admin/veiculos" className="text-xs transition-opacity hover:opacity-70" style={{ color: 'var(--cor-primaria)' }}>
               Ver todos
             </Link>
           </div>
           <div className="divide-y divide-[#222]">
             {veiculos.length === 0 ? (
-              <p className="px-5 py-6 text-[#555] text-sm text-center">
-                Nenhum veículo cadastrado.
-              </p>
+              <p className="px-5 py-6 text-[#555] text-sm text-center">Nenhum veículo cadastrado.</p>
             ) : (
               veiculos.map((v, i) => (
-                <div
-                  key={v.id}
-                  className={`px-5 py-3 flex items-center justify-between ${
-                    i % 2 === 0 ? 'bg-[#1A1A1A]' : 'bg-[#141414]'
-                  }`}
-                >
+                <div key={v.id} className={`px-5 py-3 flex items-center justify-between ${i % 2 === 0 ? 'bg-[#1A1A1A]' : 'bg-[#141414]'}`}>
                   <div>
-                    <p className="text-white text-sm font-medium">
-                      {v.marca} {v.modelo} {v.ano}
-                    </p>
+                    <p className="text-white text-sm font-medium">{v.marca} {v.modelo} {v.ano}</p>
                     <p className="text-[#555] text-xs">{formatarPreco(v.preco)}</p>
                   </div>
-                  <span
-                    className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusBadge[v.status]}`}
-                  >
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusBadge[v.status]}`}>
                     {v.status}
                   </span>
                 </div>
@@ -198,34 +174,21 @@ export default async function DashboardPage() {
         <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-[#2A2A2A] flex items-center justify-between">
             <h2 className="text-white font-semibold text-sm">Últimos leads</h2>
-            <Link
-              href="/admin/crm"
-              className="text-xs transition-opacity hover:opacity-70"
-              style={{ color: 'var(--cor-primaria)' }}
-            >
+            <Link href="/admin/crm" className="text-xs transition-opacity hover:opacity-70" style={{ color: 'var(--cor-primaria)' }}>
               Ver todos
             </Link>
           </div>
           <div className="divide-y divide-[#222]">
             {leads.length === 0 ? (
-              <p className="px-5 py-6 text-[#555] text-sm text-center">
-                Nenhum lead registrado.
-              </p>
+              <p className="px-5 py-6 text-[#555] text-sm text-center">Nenhum lead registrado.</p>
             ) : (
               leads.map((l, i) => (
-                <div
-                  key={l.id}
-                  className={`px-5 py-3 flex items-center justify-between ${
-                    i % 2 === 0 ? 'bg-[#1A1A1A]' : 'bg-[#141414]'
-                  }`}
-                >
+                <div key={l.id} className={`px-5 py-3 flex items-center justify-between ${i % 2 === 0 ? 'bg-[#1A1A1A]' : 'bg-[#141414]'}`}>
                   <div>
                     <p className="text-white text-sm font-medium">{l.nome}</p>
                     <p className="text-[#555] text-xs">{l.telefone}</p>
                   </div>
-                  <span
-                    className={`text-xs px-2 py-0.5 rounded-full font-medium ${leadStatusBadge[l.status]}`}
-                  >
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${leadStatusBadge[l.status]}`}>
                     {l.status.replace('_', ' ')}
                   </span>
                 </div>
