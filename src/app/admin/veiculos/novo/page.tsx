@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createServerSupabase } from '@/lib/supabase-server'
+import { getLojaIdAtiva } from '@/lib/getLojaIdAtiva'
 import VeiculoForm from '@/components/admin/VeiculoForm'
 import type { UsuarioPerfil } from '@/types'
 
@@ -20,6 +21,7 @@ export default async function NovoVeiculoPage() {
   if (!perfil) redirect('/login')
 
   const p = perfil as UsuarioPerfil
+  const lojaId = await getLojaIdAtiva(p)
 
   return (
     <div className="p-6 md:p-8 max-w-4xl">
@@ -37,7 +39,7 @@ export default async function NovoVeiculoPage() {
           Novo Veículo
         </h1>
       </div>
-      <VeiculoForm lojaId={p.loja_id} />
+      <VeiculoForm lojaId={lojaId} />
     </div>
   )
 }

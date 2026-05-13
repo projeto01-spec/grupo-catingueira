@@ -1,5 +1,6 @@
 import { notFound, redirect } from 'next/navigation'
 import { createServerSupabase } from '@/lib/supabase-server'
+import { getLojaIdAtiva } from '@/lib/getLojaIdAtiva'
 import VeiculoForm from '@/components/admin/VeiculoForm'
 import type { Veiculo, UsuarioPerfil } from '@/types'
 
@@ -25,11 +26,13 @@ export default async function EditarVeiculoPage({
   if (!perfilData) redirect('/login')
   const perfil = perfilData as UsuarioPerfil
 
+  const lojaId = await getLojaIdAtiva(perfil)
+
   const { data } = await supabase
     .from('veiculos')
     .select('*')
     .eq('id', id)
-    .eq('loja_id', perfil.loja_id)
+    .eq('loja_id', lojaId)
     .single()
 
   if (!data) notFound()
@@ -54,7 +57,7 @@ export default async function EditarVeiculoPage({
           {veiculo.marca} {veiculo.modelo} {veiculo.ano}
         </p>
       </div>
-      <VeiculoForm veiculo={veiculo} lojaId={perfil.loja_id} />
+      <VeiculoForm veiculo={veiculo} lojaId={lojaId} />
     </div>
   )
 }

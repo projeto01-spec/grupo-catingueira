@@ -1,5 +1,7 @@
 import { redirect } from 'next/navigation'
+import Link from 'next/link'
 import { createServerSupabase } from '@/lib/supabase-server'
+import { getLojaIdAtiva } from '@/lib/getLojaIdAtiva'
 import type { Lead, UsuarioPerfil, Loja } from '@/types'
 import NovoLeadForm from '@/components/admin/NovoLeadForm'
 
@@ -30,14 +32,24 @@ export default async function CrmPage({
   if (!perfilData) redirect('/login')
   const perfil = perfilData as UsuarioPerfil & { loja: Loja | null }
 
+  const lojaId = await getLojaIdAtiva(perfil)
+
   let query = supabase
     .from('leads')
     .select('*, veiculo:veiculos(marca, modelo, ano)')
-    .eq('loja_id', perfil.loja_id)
+    .eq('loja_id', lojaId)
     .order('created_at', { ascending: false })
 
-  if (params.status) query = query.eq('status', params.status as 'novo' | 'contato_feito' | 'negociando' | 'fechado' | 'perdido')
-  if (params.origem) query = query.eq('origem', params.origem as 'site' | 'whatsapp' | 'instagram' | 'indicacao' | 'outros')
+  if (params.status)
+    query = query.eq(
+      'status',
+      params.status as 'novo' | 'contato_feito' | 'negociando' | 'fechado' | 'perdido'
+    )
+  if (params.origem)
+    query = query.eq(
+      'origem',
+      params.origem as 'site' | 'whatsapp' | 'instagram' | 'indicacao' | 'outros'
+    )
 
   const { data } = await query
   const leads = (data ?? []) as Lead[]
@@ -87,7 +99,6 @@ export default async function CrmPage({
         </div>
       </div>
 
-      {/* Filtros */}
       <div className="flex gap-2 mb-6 flex-wrap">
         {statusOpts.map(opt => (
           <a
@@ -126,25 +137,25 @@ export default async function CrmPage({
         ))}
       </div>
 
-      {/* Adicionar lead manualmente */}
       <div className="mb-6">
-        <NovoLeadForm lojaId={perfil.loja_id} />
+        <NovoLeadForm lojaId={lojaId} />
       </div>
 
-      {/* Tabela */}
       <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[#2A2A2A]">
-                {['Nome', 'Telefone', 'Veículo de interesse', 'Origem', 'Status', 'Data', 'Ação'].map(h => (
-                  <th
-                    key={h}
-                    className="text-left px-4 py-3 text-[#555] font-medium text-xs uppercase tracking-wider whitespace-nowrap"
-                  >
-                    {h}
-                  </th>
-                ))}
+                {['Nome', 'Telefone', 'Veículo de interesse', 'Origem', 'Status', 'Data', 'Ação'].map(
+                  h => (
+                    <th
+                      key={h}
+                      className="text-left px-4 py-3 text-[#555] font-medium text-xs uppercase tracking-wider whitespace-nowrap"
+                    >
+                      {h}
+                    </th>
+                  )
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-[#1E1E1E]">
@@ -168,7 +179,14 @@ export default async function CrmPage({
                       key={l.id}
                       className={i % 2 === 0 ? 'bg-[#1A1A1A]' : 'bg-[#141414]'}
                     >
-                      <td className="px-4 py-3 text-white font-medium">{l.nome}</td>
+                      <td className="px-4 py-3 text-white font-medium">
+                        <Link
+                          href={`/admin/leads/${l.id}`}
+                          className="hover:underline underline-offset-2"
+                        >
+                          {l.nome}
+                        </Link>
+                      </td>
                       <td className="px-4 py-3 text-[#888]">{l.telefone}</td>
                       <td className="px-4 py-3 text-[#888] whitespace-nowrap">
                         {l.veiculo
@@ -176,7 +194,9 @@ export default async function CrmPage({
                           : '—'}
                       </td>
                       <td className="px-4 py-3">
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${origemBadge[l.origem]}`}>
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded-full ${origemBadge[l.origem]}`}
+                        >
                           {l.origem}
                         </span>
                       </td>

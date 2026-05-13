@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createServerSupabase } from '@/lib/supabase-server'
+import { getLojaIdAtiva } from '@/lib/getLojaIdAtiva'
 import { formatarPreco } from '@/lib/utils'
 import type { Veiculo, Lead, UsuarioPerfil } from '@/types'
 
@@ -21,7 +22,7 @@ export default async function DashboardPage() {
   const perfil = perfilData as UsuarioPerfil | null
   if (!perfil) redirect('/login')
 
-  const lojaId = perfil.loja_id
+  const lojaId = await getLojaIdAtiva(perfil)
 
   const agora = new Date()
   const inicioMes = new Date(agora.getFullYear(), agora.getMonth(), 1).toISOString()
@@ -134,7 +135,6 @@ export default async function DashboardPage() {
         <p className="text-[#555] text-sm mt-1">Visão geral da sua loja</p>
       </div>
 
-      {/* Métricas */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {metricas.map(m => (
           <div
@@ -154,7 +154,6 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {/* Últimos veículos */}
         <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-[#2A2A2A] flex items-center justify-between">
             <h2 className="text-white font-semibold text-sm">Últimos veículos</h2>
@@ -168,12 +167,16 @@ export default async function DashboardPage() {
           </div>
           <div className="divide-y divide-[#222]">
             {veiculos.length === 0 ? (
-              <p className="px-5 py-6 text-[#555] text-sm text-center">Nenhum veículo cadastrado.</p>
+              <p className="px-5 py-6 text-[#555] text-sm text-center">
+                Nenhum veículo cadastrado.
+              </p>
             ) : (
               veiculos.map((v, i) => (
                 <div
                   key={v.id}
-                  className={`px-5 py-3 flex items-center justify-between ${i % 2 === 0 ? 'bg-[#1A1A1A]' : 'bg-[#141414]'}`}
+                  className={`px-5 py-3 flex items-center justify-between ${
+                    i % 2 === 0 ? 'bg-[#1A1A1A]' : 'bg-[#141414]'
+                  }`}
                 >
                   <div>
                     <p className="text-white text-sm font-medium">
@@ -192,7 +195,6 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        {/* Últimos leads */}
         <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl overflow-hidden">
           <div className="px-5 py-4 border-b border-[#2A2A2A] flex items-center justify-between">
             <h2 className="text-white font-semibold text-sm">Últimos leads</h2>
@@ -206,12 +208,16 @@ export default async function DashboardPage() {
           </div>
           <div className="divide-y divide-[#222]">
             {leads.length === 0 ? (
-              <p className="px-5 py-6 text-[#555] text-sm text-center">Nenhum lead registrado.</p>
+              <p className="px-5 py-6 text-[#555] text-sm text-center">
+                Nenhum lead registrado.
+              </p>
             ) : (
               leads.map((l, i) => (
                 <div
                   key={l.id}
-                  className={`px-5 py-3 flex items-center justify-between ${i % 2 === 0 ? 'bg-[#1A1A1A]' : 'bg-[#141414]'}`}
+                  className={`px-5 py-3 flex items-center justify-between ${
+                    i % 2 === 0 ? 'bg-[#1A1A1A]' : 'bg-[#141414]'
+                  }`}
                 >
                   <div>
                     <p className="text-white text-sm font-medium">{l.nome}</p>

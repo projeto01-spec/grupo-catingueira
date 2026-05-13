@@ -1,6 +1,8 @@
 import { redirect } from 'next/navigation'
 import { createServerSupabase } from '@/lib/supabase-server'
+import { getLojaIdAtiva } from '@/lib/getLojaIdAtiva'
 import { formatarPreco, calcularLucro, calcularDiasEstoque } from '@/lib/utils'
+import MonthPicker from '@/components/admin/MonthPicker'
 import type { FinanceiroVeiculo, UsuarioPerfil } from '@/types'
 
 interface SearchParams {
@@ -33,10 +35,12 @@ export default async function FinanceiroPage({
     redirect('/admin/dashboard')
   }
 
+  const lojaId = await getLojaIdAtiva(perfil)
+
   let query = supabase
     .from('financeiro_veiculos')
     .select('*, veiculo:veiculos(marca, modelo, ano, data_aquisicao)')
-    .eq('loja_id', perfil.loja_id)
+    .eq('loja_id', lojaId)
     .order('created_at', { ascending: false })
 
   if (params.mes) {
@@ -62,9 +66,8 @@ export default async function FinanceiroPage({
     { faturamento: 0, custo: 0, lucro: 0, count: 0 }
   )
 
-  const margemMedia = totais.faturamento > 0
-    ? (totais.lucro / totais.faturamento) * 100
-    : 0
+  const margemMedia =
+    totais.faturamento > 0 ? (totais.lucro / totais.faturamento) * 100 : 0
 
   const cards = [
     { label: 'Faturamento total', valor: formatarPreco(totais.faturamento), cor: '#3B82F6' },
@@ -85,19 +88,9 @@ export default async function FinanceiroPage({
           </h1>
           <p className="text-[#555] text-sm mt-1">DRE por veículo</p>
         </div>
-        <input
-          type="month"
-          defaultValue={params.mes ?? mesAtual}
-          onChange={e => {
-            if (typeof window !== 'undefined') {
-              window.location.href = `/admin/financeiro?mes=${e.target.value}`
-            }
-          }}
-          className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[var(--cor-primaria)] transition-colors"
-        />
+        <MonthPicker value={params.mes ?? mesAtual} basePath="/admin/financeiro" />
       </div>
 
-      {/* Cards de totais */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {cards.map(c => (
           <div key={c.label} className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl p-5">
@@ -112,15 +105,20 @@ export default async function FinanceiroPage({
         ))}
       </div>
 
-      {/* Tabela DRE */}
       <div className="bg-[#1A1A1A] border border-[#2A2A2A] rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[#2A2A2A]">
                 {[
-                  'Veículo', 'Custo Aq.', 'Custos Extras', 'Custo Total',
-                  'Preço Venda', 'Lucro Bruto', 'Margem %', 'Dias Estoque',
+                  'Veículo',
+                  'Custo Aq.',
+                  'Custos Extras',
+                  'Custo Total',
+                  'Preço Venda',
+                  'Lucro Bruto',
+                  'Margem %',
+                  'Dias Estoque',
                 ].map(h => (
                   <th
                     key={h}
@@ -157,19 +155,25 @@ export default async function FinanceiroPage({
                           ? `${f.veiculo.marca} ${f.veiculo.modelo} ${f.veiculo.ano}`
                           : '—'}
                       </td>
-                      <td className="px-4 py-3 text-[#888]">{formatarPreco(f.custo_aquisicao)}</td>
+                      <td className="px-4 py-3 text-[#888]">
+                        {formatarPreco(f.custo_aquisicao)}
+                      </td>
                       <td className="px-4 py-3 text-[#888]">{formatarPreco(extras)}</td>
                       <td className="px-4 py-3 text-white">{formatarPreco(r.custo_total)}</td>
                       <td className="px-4 py-3 text-white">
                         {f.preco_venda ? formatarPreco(f.preco_venda) : '—'}
                       </td>
                       <td
-                        className={`px-4 py-3 font-semibold ${lucroPositivo ? 'text-green-400' : 'text-red-400'}`}
+                        className={`px-4 py-3 font-semibold ${
+                          lucroPositivo ? 'text-green-400' : 'text-red-400'
+                        }`}
                       >
                         {formatarPreco(r.lucro_bruto)}
                       </td>
                       <td
-                        className={`px-4 py-3 font-semibold ${lucroPositivo ? 'text-green-400' : 'text-red-400'}`}
+                        className={`px-4 py-3 font-semibold ${
+                          lucroPositivo ? 'text-green-400' : 'text-red-400'
+                        }`}
                       >
                         {r.margem_percentual.toFixed(1)}%
                       </td>

@@ -55,9 +55,11 @@ export default async function HomePage() {
     )
   }
 
+  if (!loja) return null
+
   return (
     <HomeCatingueira
-      loja={loja!}
+      loja={loja}
       destaques={destaques}
       waHref={waHref}
       waDisplay={waDisplay}

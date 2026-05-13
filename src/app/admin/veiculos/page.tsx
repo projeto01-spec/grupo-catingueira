@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { createServerSupabase } from '@/lib/supabase-server'
+import { getLojaIdAtiva } from '@/lib/getLojaIdAtiva'
 import { formatarPreco, formatarKm } from '@/lib/utils'
 import type { Veiculo, UsuarioPerfil } from '@/types'
 import MarcaVendidoButton from '@/components/admin/MarcaVendidoButton'
@@ -32,14 +33,19 @@ export default async function VeiculosAdminPage({
   const perfil = perfilData as UsuarioPerfil | null
   if (!perfil) redirect('/login')
 
+  const lojaId = await getLojaIdAtiva(perfil)
+
   let query = supabase
     .from('veiculos')
     .select('*')
-    .eq('loja_id', perfil.loja_id)
+    .eq('loja_id', lojaId)
     .order('created_at', { ascending: false })
 
   if (params.status) {
-    query = query.eq('status', params.status as 'disponivel' | 'reservado' | 'vendido' | 'manutencao')
+    query = query.eq(
+      'status',
+      params.status as 'disponivel' | 'reservado' | 'vendido' | 'manutencao'
+    )
   }
 
   const { data } = await query
@@ -81,7 +87,6 @@ export default async function VeiculosAdminPage({
         </Link>
       </div>
 
-      {/* Filtro status */}
       <div className="flex gap-2 mb-6 flex-wrap">
         {statusOptions.map(opt => (
           <a
@@ -115,11 +120,21 @@ export default async function VeiculosAdminPage({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[#2A2A2A]">
-                  <th className="text-left px-4 py-3 text-[#555] font-medium text-xs uppercase tracking-wider">Veículo</th>
-                  <th className="text-left px-4 py-3 text-[#555] font-medium text-xs uppercase tracking-wider hidden md:table-cell">KM</th>
-                  <th className="text-left px-4 py-3 text-[#555] font-medium text-xs uppercase tracking-wider">Preço</th>
-                  <th className="text-left px-4 py-3 text-[#555] font-medium text-xs uppercase tracking-wider hidden sm:table-cell">Status</th>
-                  <th className="text-right px-4 py-3 text-[#555] font-medium text-xs uppercase tracking-wider">Ações</th>
+                  <th className="text-left px-4 py-3 text-[#555] font-medium text-xs uppercase tracking-wider">
+                    Veículo
+                  </th>
+                  <th className="text-left px-4 py-3 text-[#555] font-medium text-xs uppercase tracking-wider hidden md:table-cell">
+                    KM
+                  </th>
+                  <th className="text-left px-4 py-3 text-[#555] font-medium text-xs uppercase tracking-wider">
+                    Preço
+                  </th>
+                  <th className="text-left px-4 py-3 text-[#555] font-medium text-xs uppercase tracking-wider hidden sm:table-cell">
+                    Status
+                  </th>
+                  <th className="text-right px-4 py-3 text-[#555] font-medium text-xs uppercase tracking-wider">
+                    Ações
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#1E1E1E]">
@@ -141,22 +156,42 @@ export default async function VeiculosAdminPage({
                             />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center">
-                              <svg className="w-5 h-5 text-[#333]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16" />
+                              <svg
+                                className="w-5 h-5 text-[#333]"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={1}
+                                  d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16"
+                                />
                               </svg>
                             </div>
                           )}
                         </div>
                         <div>
-                          <p className="text-white font-medium">{v.marca} {v.modelo}</p>
-                          <p className="text-[#555] text-xs">{v.ano} • {v.cambio}</p>
+                          <p className="text-white font-medium">
+                            {v.marca} {v.modelo}
+                          </p>
+                          <p className="text-[#555] text-xs">
+                            {v.ano} • {v.cambio}
+                          </p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-[#888] hidden md:table-cell">{formatarKm(v.km)}</td>
-                    <td className="px-4 py-3 text-white font-medium">{formatarPreco(v.preco)}</td>
+                    <td className="px-4 py-3 text-[#888] hidden md:table-cell">
+                      {formatarKm(v.km)}
+                    </td>
+                    <td className="px-4 py-3 text-white font-medium">
+                      {formatarPreco(v.preco)}
+                    </td>
                     <td className="px-4 py-3 hidden sm:table-cell">
-                      <span className={`text-xs px-2.5 py-1 rounded-full border font-medium ${statusBadge[v.status]}`}>
+                      <span
+                        className={`text-xs px-2.5 py-1 rounded-full border font-medium ${statusBadge[v.status]}`}
+                      >
                         {v.status}
                       </span>
                     </td>
