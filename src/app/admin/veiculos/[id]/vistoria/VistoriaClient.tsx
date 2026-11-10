@@ -20,9 +20,11 @@ interface Props {
   lojaId: string
   itensConfig: { key: string; label: string }[]
   vistoria: VistoriaVeiculo | null
+  /** false quando a tabela de vistoria não existe no banco (ver lib/tabelas-opcionais). */
+  disponivel?: boolean
 }
 
-export default function VistoriaClient({ veiculoId, lojaId, itensConfig, vistoria }: Props) {
+export default function VistoriaClient({ veiculoId, lojaId, itensConfig, vistoria, disponivel = true }: Props) {
   const router = useRouter()
 
   const initialItens = itensConfig.reduce<Record<string, Status>>((acc, item) => {
@@ -54,6 +56,18 @@ export default function VistoriaClient({ veiculoId, lojaId, itensConfig, vistori
     } finally {
       setSalvando(false)
     }
+  }
+
+  if (!disponivel) {
+    return (
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-5">
+        <p className="text-amber-800 font-semibold text-sm">Vistoria indisponível</p>
+        <p className="text-amber-700 text-sm mt-1">
+          A tabela de vistoria não existe no banco de dados, então não é possível ver nem salvar vistorias.
+          Avise o administrador.
+        </p>
+      </div>
+    )
   }
 
   return (

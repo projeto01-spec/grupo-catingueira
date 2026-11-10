@@ -25,10 +25,12 @@ interface Props {
   vistoria: VistoriaVeiculo | null
   transferencias: VeiculoTransferencia[]
   lojaCadastroNome: string
+  /** false quando a tabela de vistoria não existe no banco. */
+  vistoriaDisponivel: boolean
   abaInicial?: Aba
 }
 
-export default function VeiculoTabs({ veiculo, financeiro, custos, lojaId, podeVerDocumentacao, podeVerFinanceiroCompleto, aquisicao, anexos, vistoria, transferencias, lojaCadastroNome, abaInicial }: Props) {
+export default function VeiculoTabs({ veiculo, financeiro, custos, lojaId, podeVerDocumentacao, podeVerFinanceiroCompleto, aquisicao, anexos, vistoria, transferencias, lojaCadastroNome, vistoriaDisponivel, abaInicial }: Props) {
   const [aba, setAba] = useState<Aba>(abaInicial ?? 'dados')
 
   const abas: { id: Aba; label: string }[] = [
@@ -105,6 +107,7 @@ export default function VeiculoTabs({ veiculo, financeiro, custos, lojaId, podeV
           lojaId={lojaId}
           itensConfig={ITENS_VISTORIA}
           vistoria={vistoria}
+          disponivel={vistoriaDisponivel}
         />
       )}
 

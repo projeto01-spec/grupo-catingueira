@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { adminSupabase, createServerSupabase } from '@/lib/supabase-server'
 import { conferirLojaDoRegistro } from '@/lib/loja-ativa'
 import AvisoOutraLoja from '@/components/admin/AvisoOutraLoja'
+import { TABELA_VISTORIA, ehTabelaInexistente } from '@/lib/tabelas-opcionais'
 import { ITENS_VISTORIA } from '@/lib/vistoriaItens'
 import type { VistoriaVeiculo, UsuarioPerfil } from '@/types'
 import VistoriaClient from './VistoriaClient'
@@ -51,8 +52,8 @@ export default async function VistoriaPage({
   }
   if (conferencia.status === 'negado') notFound()
 
-  const { data: vistoriaData } = await admin
-    .from('vistoria_veiculo')
+  const { data: vistoriaData, error: vistoriaErro } = await admin
+    .from(TABELA_VISTORIA)
     .select('*')
     .eq('veiculo_id', id)
     .order('created_at', { ascending: false })
@@ -84,6 +85,7 @@ export default async function VistoriaPage({
         lojaId={veiculoData.loja_id}
         itensConfig={ITENS_VISTORIA}
         vistoria={vistoriaData as VistoriaVeiculo | null}
+        disponivel={!ehTabelaInexistente(vistoriaErro)}
       />
     </div>
   )

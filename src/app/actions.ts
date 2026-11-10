@@ -9,6 +9,7 @@ import { ehPerfilTodasLojas, obterPerfilAtivo, podeAcessarVendas, temAcessoLoja,
 import { getLoja } from '@/lib/getLoja'
 import { COOKIE_LOJA_ATIVA, lojasPermitidas, mensagemOutraLoja, nomeDaLoja, obterLojaAtivaId } from '@/lib/loja-ativa'
 import { BUCKET_FOTOS, caminhoDaUrlPublicaFoto, ehCaminhoFotoVeiculo, lojaDoCaminhoFoto } from '@/lib/storage-fotos'
+import { MSG_VISTORIA_INDISPONIVEL, TABELA_VISTORIA, ehTabelaInexistente } from '@/lib/tabelas-opcionais'
 import type { Anexo, DespesaLoja, ImagensLanding, Perfil, ResultadoAcao, TipoInteracao, TipoLancamento, Venda, Veiculo, VendaPagamentoDetalhes } from '@/types'
 
 function adminSupabase() {
@@ -587,7 +588,7 @@ export async function criarLead(data: {
   status: string
   tags: string[]
 }): Promise<void> {
-  await exigirAcessoLoja(data.loja_id, 'Você não tem permissão para criar leads nesta loja.')
+  const perfilCriador = await exigirAcessoLoja(data.loja_id, 'Você não tem permissão para criar leads nesta loja.')
   if (data.responsavel_id) await exigirResponsavelDaLoja(data.responsavel_id, data.loja_id)
   const supabase = adminSupabase()
   // Campos base garantidamente existentes na tabela
@@ -606,8 +607,22 @@ export async function criarLead(data: {
   // Campos novos — só incluídos se tiverem valor (seguro caso migration ainda não rodou)
   if (data.proximo_atendimento) payload.proximo_atendimento = data.proximo_atendimento
 
-  const { error } = await supabase.from('leads').insert(payload)
+  const { data: novoLead, error } = await supabase.from('leads').insert(payload).select('id').single()
   if (error) throw new Error(`criarLead falhou: ${error.message} | code: ${error.code} | details: ${error.details}`)
+
+  // leads não tem coluna de autor (criado_por não existe no banco real).
+  // Registra quem cadastrou como primeira interação do lead — mesma tabela e
+  // colunas que addLeadInteracao já usa em produção. Se falhar (ex.: CHECK de
+  // `tipo` diferente no banco), o lead continua criado.
+  const { error: erroInteracao } = await supabase.from('lead_interacoes').insert({
+    lead_id: (novoLead as { id: string }).id,
+    loja_id: data.loja_id,
+    usuario_id: perfilCriador.id,
+    tipo: 'nota',
+    descricao: 'Lead cadastrado manualmente no CRM.',
+  })
+  if (erroInteracao) console.warn('[criarLead] não registrou a interação de cadastro:', erroInteracao.message)
+
   revalidatePath('/admin/crm')
 }
 
@@ -1128,7 +1143,7 @@ export async function descartarFotosNaoSalvas(lojaId: string, urls: string[]): P
 }
 
 // Move o veículo para outra loja e registra o histórico em veiculo_transferencias.
-// financeiro_veiculos/custos_manutencao/vistoria_veiculo têm loja_id próprio usado
+// financeiro_veiculos/custos_manutencao/vistoria têm loja_id próprio usado
 // em RLS e em relatórios (ex: /admin/financeiro) filtrados pela loja ativa — sem
 // atualizar esses registros junto, eles ficariam "presos" à loja de origem e
 // sumiriam da visão da loja de destino. vendas e anexos não são tocados: vendas já
@@ -1163,26 +1178,29 @@ export async function transferirVeiculo(
   const { data: lojaDestino } = await supabase.from('lojas').select('id').eq('id', lojaDestinoId).maybeSingle()
   if (!lojaDestino) throw new Error('Loja de destino não encontrada.')
 
-  const { error: historicoError } = await supabase.from('veiculo_transferencias').insert({
-    veiculo_id: veiculoId,
-    loja_origem_id: veiculo.loja_id,
-    loja_destino_id: lojaDestinoId,
-    transferido_por: userId,
-    observacoes,
+  // Tudo numa transação só (função transferir_veiculo, migration 025):
+  // histórico + veiculos + financeiro_veiculos + custos_manutencao + vistoria.
+  // Antes eram 5 chamadas separadas — a vistoria_veiculo não existe no banco
+  // real, então a última falhava DEPOIS de o carro já ter mudado de loja, e o
+  // usuário via "erro" com a transferência meio feita. Agora é tudo ou nada;
+  // tabela filha que não existe é pulada (e reportada no retorno).
+  const { data: resultado, error: rpcError } = await supabase.rpc('transferir_veiculo', {
+    p_veiculo_id: veiculoId,
+    p_loja_destino_id: lojaDestinoId,
+    p_usuario_id: userId,
+    p_observacoes: observacoes,
+    p_loja_origem_esperada: veiculo.loja_id,
   })
-  if (historicoError) throw new Error(historicoError.message)
-
-  const [{ error: veiculoUpdateError }, { error: financeiroError }, { error: custosError }, { error: vistoriaError }] =
-    await Promise.all([
-      supabase.from('veiculos').update({ loja_id: lojaDestinoId }).eq('id', veiculoId),
-      supabase.from('financeiro_veiculos').update({ loja_id: lojaDestinoId }).eq('veiculo_id', veiculoId),
-      supabase.from('custos_manutencao').update({ loja_id: lojaDestinoId }).eq('veiculo_id', veiculoId),
-      supabase.from('vistoria_veiculo').update({ loja_id: lojaDestinoId }).eq('veiculo_id', veiculoId),
-    ])
-  if (veiculoUpdateError) throw new Error(veiculoUpdateError.message)
-  if (financeiroError) throw new Error(financeiroError.message)
-  if (custosError) throw new Error(custosError.message)
-  if (vistoriaError) throw new Error(vistoriaError.message)
+  if (rpcError) {
+    if (rpcError.code === 'PGRST202' || /transferir_veiculo/.test(rpcError.message) && /not find|does not exist/i.test(rpcError.message)) {
+      throw new Error('A transferência precisa da migration 025 (função transferir_veiculo). Nada foi alterado.')
+    }
+    throw new Error(`Transferência não realizada (nada foi alterado): ${rpcError.message}`)
+  }
+  const pulados = (resultado as { pulados?: string[] } | null)?.pulados ?? []
+  if (pulados.length > 0) {
+    console.warn('[transferirVeiculo] tabelas inexistentes puladas:', pulados.join(', '))
+  }
 
   revalidatePath('/admin/veiculos')
   revalidatePath('/admin/veiculos/' + veiculoId)
@@ -2084,7 +2102,7 @@ export async function excluirVeiculo(veiculoId: string): Promise<{ tipo: 'soft' 
     supabase.from('vendas').select('id', { count: 'exact', head: true }).eq('veiculo_id', veiculoId),
     supabase.from('financeiro_veiculos').select('id', { count: 'exact', head: true }).eq('veiculo_id', veiculoId),
     supabase.from('custos_manutencao').select('id', { count: 'exact', head: true }).eq('veiculo_id', veiculoId),
-    supabase.from('vistoria_veiculo').select('id', { count: 'exact', head: true }).eq('veiculo_id', veiculoId),
+    supabase.from(TABELA_VISTORIA).select('id', { count: 'exact', head: true }).eq('veiculo_id', veiculoId),
     // tabela `anexos` só existe após a migration 001 — tolera erro caso ainda não tenha rodado
     supabase.from('anexos').select('id', { count: 'exact', head: true }).eq('entidade_tipo', 'veiculo').eq('entidade_id', veiculoId),
   ])
@@ -2132,15 +2150,15 @@ export async function saveVistoria(
 
   if (vistoriaId) {
     const { data: atualizada, error } = await supabase
-      .from('vistoria_veiculo')
+      .from(TABELA_VISTORIA)
       .update({ itens, observacoes: observacoes || null, aprovado })
       .eq('id', vistoriaId)
       .eq('veiculo_id', veiculoId)
       .select('id')
-    if (error) throw new Error(error.message)
+    if (error) throw new Error(ehTabelaInexistente(error) ? MSG_VISTORIA_INDISPONIVEL : error.message)
     if (!atualizada?.length) throw new Error('Vistoria não encontrada para este veículo.')
   } else {
-    const { error } = await supabase.from('vistoria_veiculo').insert({
+    const { error } = await supabase.from(TABELA_VISTORIA).insert({
       veiculo_id: veiculoId,
       loja_id: veiculo.loja_id,
       inspetor_id: perfil.id,
@@ -2148,7 +2166,7 @@ export async function saveVistoria(
       observacoes: observacoes || null,
       aprovado,
     })
-    if (error) throw new Error(error.message)
+    if (error) throw new Error(ehTabelaInexistente(error) ? MSG_VISTORIA_INDISPONIVEL : error.message)
   }
   revalidatePath('/admin/veiculos/' + veiculoId)
   revalidatePath('/admin/veiculos/' + veiculoId + '/vistoria')

@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation'
 import { createServerSupabase, adminSupabase } from '@/lib/supabase-server'
 import { conferirLojaDoRegistro, nomeDaLoja, obterLojaAtivaId } from '@/lib/loja-ativa'
 import AvisoOutraLoja from '@/components/admin/AvisoOutraLoja'
+import { TABELA_VISTORIA, ehTabelaInexistente } from '@/lib/tabelas-opcionais'
 import MarcaVendidoButton from '@/components/admin/MarcaVendidoButton'
 import ExcluirVeiculoButton from '@/components/admin/ExcluirVeiculoButton'
 import TransferirVeiculoButton from '@/components/admin/TransferirVeiculoButton'
@@ -73,7 +74,7 @@ export default async function EditarVeiculoPage({
     { data: custosData },
     { data: aquisicaoData },
     { data: anexosData },
-    { data: vistoriaData },
+    { data: vistoriaData, error: vistoriaErro },
     { data: outrasLojasData },
     { data: transferenciasData },
   ] = await Promise.all([
@@ -113,7 +114,7 @@ export default async function EditarVeiculoPage({
           .order('criado_em', { ascending: false })
       : Promise.resolve({ data: [] as Anexo[] }),
     admin
-      .from('vistoria_veiculo')
+      .from(TABELA_VISTORIA)
       .select('*')
       .eq('veiculo_id', id)
       .order('created_at', { ascending: false })
@@ -153,6 +154,8 @@ export default async function EditarVeiculoPage({
   const custos = (custosData ?? []) as CustoManutencao[]
   const aquisicao = aquisicaoData as VeiculoAquisicao | null
   const vistoria = vistoriaData as VistoriaVeiculo | null
+  // Tabela de vistoria não existe no banco real (confirmado): aba mostra "indisponível".
+  const vistoriaDisponivel = !ehTabelaInexistente(vistoriaErro)
   const outrasLojas = ((outrasLojasData ?? []) as { id: string; nome: string }[]).filter(
     l => l.id !== veiculo.loja_id
   )
@@ -240,6 +243,7 @@ export default async function EditarVeiculoPage({
         vistoria={vistoria}
         transferencias={transferencias}
         lojaCadastroNome={lojaCadastroNome}
+        vistoriaDisponivel={vistoriaDisponivel}
         abaInicial={abaInicial}
       />
     </div>
