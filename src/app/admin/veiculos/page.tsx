@@ -2,10 +2,11 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { createServerSupabase, adminSupabase } from '@/lib/supabase-server'
-import { getLojaIdAtiva } from '@/lib/getLojaIdAtiva'
+import { obterLojaAtivaId } from '@/lib/loja-ativa'
 import { formatarPreco, formatarKm } from '@/lib/utils'
 import { NOME_CANAL, pendenciasLojaOlx, pendenciasPublicacao } from '@/lib/publicacao'
 import { filtroOrIlike } from '@/lib/filtro-busca'
+import { ArrowLeftRight } from 'lucide-react'
 import type { Veiculo, UsuarioPerfil } from '@/types'
 import MarcaVendidoButton from '@/components/admin/MarcaVendidoButton'
 import VeiculosBuscaClient from './VeiculosBuscaClient'
@@ -32,7 +33,7 @@ export default async function VeiculosAdminPage({
   const perfil = perfilData as UsuarioPerfil | null
   if (!perfil) redirect('/login')
 
-  const lojaId = await getLojaIdAtiva(perfil)
+  const lojaId = await obterLojaAtivaId(perfil)
   const ehSocio = perfil.perfil === 'socio'
 
   const admin = adminSupabase()
@@ -58,6 +59,17 @@ export default async function VeiculosAdminPage({
     admin.from('lojas').select('cep, whatsapp').eq('id', lojaId).maybeSingle(),
   ])
   const todos = (data ?? []) as Veiculo[]
+
+  // Veículos que já passaram por transferência entre lojas (ícone na lista).
+  // Uma consulta só, pelos ids da página; tabela ausente/erro → sem ícone.
+  const transferidos = new Set<string>()
+  if (todos.length > 0) {
+    const { data: transf } = await admin
+      .from('veiculo_transferencias')
+      .select('veiculo_id')
+      .in('veiculo_id', todos.map(v => v.id))
+    for (const t of (transf ?? []) as { veiculo_id: string }[]) transferidos.add(t.veiculo_id)
+  }
 
   // Pendências de publicação (OLX/Marketplace) calculadas aqui, sem query
   // extra — só para veículos com publicar_olx/publicar_marketplace marcados.
@@ -224,6 +236,11 @@ export default async function VeiculosAdminPage({
                         <div>
                           <p className="text-[#111] font-medium flex items-center gap-1.5">
                             {v.marca} {v.modelo}
+                            {transferidos.has(v.id) && (
+                              <span title="Já foi transferido entre lojas — veja o histórico na edição" aria-label="Já foi transferido entre lojas">
+                                <ArrowLeftRight className="w-3.5 h-3.5 text-[#9CA3AF]" aria-hidden="true" />
+                              </span>
+                            )}
                             {v.rascunho && (
                               <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-amber-300 bg-amber-50 text-amber-700 font-semibold tracking-wide">
                                 RASCUNHO

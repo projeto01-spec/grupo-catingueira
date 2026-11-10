@@ -7,6 +7,7 @@ import { createServerClient } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
 import { obterPerfilAtivo, podeAcessarVendas, temAcessoLoja, type PerfilAcesso } from '@/lib/acesso'
 import { getLoja } from '@/lib/getLoja'
+import { COOKIE_LOJA_ATIVA, lojasPermitidas, mensagemOutraLoja, nomeDaLoja, obterLojaAtivaId } from '@/lib/loja-ativa'
 import { BUCKET_FOTOS, caminhoDaUrlPublicaFoto, ehCaminhoFotoVeiculo, lojaDoCaminhoFoto } from '@/lib/storage-fotos'
 import type { Anexo, DespesaLoja, ImagensLanding, Perfil, ResultadoAcao, TipoInteracao, TipoLancamento, Venda, Veiculo, VendaPagamentoDetalhes } from '@/types'
 
@@ -83,7 +84,18 @@ async function exigirUsuarioAtivo(): Promise<PerfilAcesso> {
 async function exigirAcessoLoja(lojaId: string | null | undefined, mensagemErro = 'Você não tem permissão para acessar dados desta loja.'): Promise<PerfilAcesso> {
   const perfil = await exigirUsuarioAtivo()
   if (!temAcessoLoja(perfil, lojaId)) throw new Error(mensagemErro)
+  await exigirLojaAtiva(perfil, lojaId)
   return perfil
+}
+
+// O registro precisa ser da loja ATIVA (seletor), não só de uma loja a que o
+// usuário tem acesso: admin/diretor com o seletor na Catingueira não grava
+// nem altera nada da Felizardo por engano (ex.: aba aberta antes de trocar a
+// loja). Para os demais perfis a loja ativa é sempre a própria.
+async function exigirLojaAtiva(perfil: PerfilAcesso, lojaId: string | null | undefined): Promise<void> {
+  if (!lojaId) throw new Error('Registro sem loja.')
+  const ativa = await obterLojaAtivaId(perfil)
+  if (lojaId !== ativa) throw new Error(mensagemOutraLoja(await nomeDaLoja(lojaId)))
 }
 
 // Acesso a um veículo existente: loja do veículo no BANCO (não a que o
@@ -103,12 +115,17 @@ async function exigirAcessoVeiculo(veiculoId: string): Promise<{ perfil: PerfilA
 // ─── AUTH / USERS ─────────────────────────────────────────────────────────────
 
 export async function setLojaAtiva(lojaId: string) {
+  // Só grava loja que o usuário pode usar (antes aceitava qualquer valor).
+  const perfil = await exigirUsuarioAtivo()
+  const permitidas = await lojasPermitidas(perfil)
+  if (!permitidas.some(l => l.id === lojaId)) throw new Error('Você não tem acesso a essa loja.')
   const cookieStore = await cookies()
-  cookieStore.set('loja_ativa', lojaId, {
+  cookieStore.set(COOKIE_LOJA_ATIVA, lojaId, {
     path: '/',
     httpOnly: true,
     sameSite: 'lax',
-    maxAge: 60 * 60 * 24 * 7,
+    // 1 ano: antes eram 7 dias e, ao expirar, o painel trocava de loja sozinho.
+    maxAge: 60 * 60 * 24 * 365,
   })
 }
 
@@ -412,17 +429,11 @@ export async function updateLojaSettings(
     favicon_url?: string | null
   }
 ) {
-  const supabase = await userSupabase()
-
-  // Checagem explícita da sessão antes do update: com autoRefreshToken
-  // desligado neste client (ver userSupabase), uma sessão expirada/inválida
-  // não se autocorrige aqui — sem isso, o update cairia direto na RLS (que
-  // exige auth.uid() != null) e voltaria com 0 linhas, indistinguível de
-  // "usuário sem permissão sobre essa loja" (ver o throw abaixo).
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
-    throw new Error('Sessão expirada. Atualize a página e tente novamente.')
-  }
+  // Antes ia pela RLS (usuarios_perfil.loja_id = lojas.id): admin/diretor com
+  // o seletor na outra loja recebia "Sem permissão para editar esta loja".
+  // Agora: perfil de gestão + loja = loja ativa do seletor, gravando com
+  // service role e só os campos conhecidos.
+  await exigirPerfil(['gerente', 'diretor', 'admin'], 'Sem permissão para editar esta loja', lojaId)
 
   // CEP vai para o anúncio da OLX (zipcode, string numérica): só dígitos, 8.
   if (data.cep !== undefined && data.cep !== null) {
@@ -431,7 +442,16 @@ export async function updateLojaSettings(
     data = { ...data, cep }
   }
 
-  const { data: atualizadas, error } = await supabase.from('lojas').update(data).eq('id', lojaId).select('id')
+  const camposPermitidos = [
+    'nome', 'whatsapp', 'cor_primaria', 'cor_secundaria', 'endereco', 'cidade', 'estado', 'cep',
+    'horario', 'sobre', 'missao', 'visao', 'instagram', 'maps_url', 'imagens_landing', 'favicon_url',
+  ] as const
+  const atualizacao = Object.fromEntries(
+    camposPermitidos.filter(c => c in data).map(c => [c, data[c]])
+  )
+
+  const supabase = adminSupabase()
+  const { data: atualizadas, error } = await supabase.from('lojas').update(atualizacao).eq('id', lojaId).select('id')
   if (error) throw new Error(error.message)
   if (!atualizadas || atualizadas.length === 0) {
     throw new Error('Sem permissão para editar esta loja')
@@ -552,11 +572,17 @@ export async function saveMensagemPadrao(
   mensagem: string,
   id?: string
 ) {
-  const supabase = await userSupabase()
+  // Loja conferida no servidor (loja ativa) — antes ia pela RLS, que usa
+  // perfil.loja_id e não deixava admin/diretor gravar na loja do seletor.
+  const supabase = adminSupabase()
   if (id) {
+    const { data: atual } = await supabase.from('mensagens_padrao').select('loja_id').eq('id', id).maybeSingle()
+    if (!atual) throw new Error('Mensagem não encontrada.')
+    await exigirAcessoLoja(atual.loja_id)
     const { error } = await supabase.from('mensagens_padrao').update({ titulo, mensagem }).eq('id', id)
     if (error) throw new Error(error.message)
   } else {
+    await exigirAcessoLoja(lojaId)
     const { error } = await supabase.from('mensagens_padrao').insert({ loja_id: lojaId, titulo, mensagem })
     if (error) throw new Error(error.message)
   }
@@ -564,7 +590,10 @@ export async function saveMensagemPadrao(
 }
 
 export async function deleteMensagemPadrao(id: string) {
-  const supabase = await userSupabase()
+  const supabase = adminSupabase()
+  const { data: atual } = await supabase.from('mensagens_padrao').select('loja_id').eq('id', id).maybeSingle()
+  if (!atual) throw new Error('Mensagem não encontrada.')
+  await exigirAcessoLoja(atual.loja_id)
   const { error } = await supabase.from('mensagens_padrao').delete().eq('id', id)
   if (error) throw new Error(error.message)
   revalidatePath('/admin/configuracoes')
@@ -573,7 +602,11 @@ export async function deleteMensagemPadrao(id: string) {
 // ─── LEMBRETES ────────────────────────────────────────────────────────────────
 
 export async function concluirLembrete(id: string) {
-  const supabase = await userSupabase()
+  // Mesmo motivo das mensagens: a RLS usa perfil.loja_id; aqui vale a loja ativa.
+  const supabase = adminSupabase()
+  const { data: lembrete } = await supabase.from('lembretes').select('loja_id').eq('id', id).maybeSingle()
+  if (!lembrete) throw new Error('Lembrete não encontrado.')
+  await exigirAcessoLoja(lembrete.loja_id)
   const { error } = await supabase.from('lembretes').update({ concluido: true }).eq('id', id)
   if (error) throw new Error(error.message)
   revalidatePath('/admin/dashboard')
@@ -624,12 +657,17 @@ export async function saveAquisicao(
   financeiroId?: string
 ) {
   await exigirPerfilFinanceiroCompleto()
+  // Veículo precisa ser da loja ativa; loja_id gravado é a do veículo no banco
+  // (o `lojaId` do navegador é ignorado — antes era gravado como veio).
+  const { veiculo } = await exigirAcessoVeiculo(veiculoId)
+  void lojaId
   const supabase = adminSupabase()
   if (financeiroId) {
     const { error } = await supabase
       .from('financeiro_veiculos')
       .update({ custo_aquisicao: custoAquisicao })
       .eq('id', financeiroId)
+      .eq('veiculo_id', veiculoId)
     if (error) throw new Error(error.message)
   } else {
     const { data: existing } = await supabase
@@ -646,7 +684,7 @@ export async function saveAquisicao(
     } else {
       const { error } = await supabase.from('financeiro_veiculos').insert({
         veiculo_id: veiculoId,
-        loja_id: lojaId,
+        loja_id: veiculo.loja_id,
         custo_aquisicao: custoAquisicao,
       })
       if (error) throw new Error(error.message)
@@ -717,6 +755,9 @@ export async function saveValorVenda(
   financeiroId?: string
 ) {
   await exigirPerfilFinanceiroCompleto()
+  // Mesmo ajuste de saveAquisicao: loja ativa + loja_id do veículo no banco.
+  const { veiculo } = await exigirAcessoVeiculo(veiculoId)
+  void lojaId
   const supabase = adminSupabase()
   const hoje = new Date().toISOString().split('T')[0]
   if (financeiroId) {
@@ -724,6 +765,7 @@ export async function saveValorVenda(
       .from('financeiro_veiculos')
       .update({ preco_venda: valor, data_venda: hoje })
       .eq('id', financeiroId)
+      .eq('veiculo_id', veiculoId)
     if (error) throw new Error(error.message)
   } else {
     const { data: existing } = await supabase
@@ -740,7 +782,7 @@ export async function saveValorVenda(
     } else {
       const { error } = await supabase.from('financeiro_veiculos').insert({
         veiculo_id: veiculoId,
-        loja_id: lojaId,
+        loja_id: veiculo.loja_id,
         custo_aquisicao: 0,
         preco_venda: valor,
         data_venda: hoje,
@@ -1086,9 +1128,15 @@ export async function transferirVeiculo(
 export async function salvarDespesa(
   data: Omit<DespesaLoja, 'id' | 'created_at'> & { id?: string }
 ): Promise<void> {
-  await exigirPerfilFinanceiroCompleto()
+  // Legado (despesas_loja foi unificada em lancamentos_financeiros — sem tela
+  // chamando hoje). Mesmo assim confere a loja ativa.
+  const { perfil } = await exigirPerfilFinanceiroCompleto()
+  await exigirLojaAtiva(perfil, data.loja_id)
   const supabase = adminSupabase()
   if (data.id) {
+    const { data: atual } = await supabase.from('despesas_loja').select('loja_id').eq('id', data.id).maybeSingle()
+    if (!atual) throw new Error('Despesa não encontrada.')
+    await exigirLojaAtiva(perfil, atual.loja_id)
     const { error } = await supabase.from('despesas_loja').update(data).eq('id', data.id)
     if (error) throw new Error(error.message)
   } else {
@@ -1099,8 +1147,11 @@ export async function salvarDespesa(
 }
 
 export async function deletarDespesa(id: string): Promise<void> {
-  await exigirPerfilFinanceiroCompleto()
+  const { perfil } = await exigirPerfilFinanceiroCompleto()
   const supabase = adminSupabase()
+  const { data: atual } = await supabase.from('despesas_loja').select('loja_id').eq('id', id).maybeSingle()
+  if (!atual) throw new Error('Despesa não encontrada.')
+  await exigirLojaAtiva(perfil, atual.loja_id)
   const { error } = await supabase.from('despesas_loja').delete().eq('id', id)
   if (error) throw new Error(error.message)
   revalidatePath('/admin/financeiro')
@@ -1122,10 +1173,20 @@ export async function salvarLancamentoFinanceiro(
   },
   lancamentoId?: string
 ): Promise<void> {
-  const { userId } = await exigirPerfilFinanceiroCompleto()
+  const { userId, perfil } = await exigirPerfilFinanceiroCompleto()
+  // Lançamento só na loja ativa — antes gravava o loja_id que viesse do
+  // navegador e editava qualquer id, de qualquer loja.
+  await exigirLojaAtiva(perfil, data.loja_id)
   const supabase = adminSupabase()
 
   if (lancamentoId) {
+    const { data: atual } = await supabase
+      .from('lancamentos_financeiros')
+      .select('loja_id')
+      .eq('id', lancamentoId)
+      .maybeSingle()
+    if (!atual) throw new Error('Lançamento não encontrado.')
+    await exigirLojaAtiva(perfil, atual.loja_id)
     const { error } = await supabase
       .from('lancamentos_financeiros')
       .update(data)
@@ -1141,8 +1202,11 @@ export async function salvarLancamentoFinanceiro(
 }
 
 export async function deletarLancamentoFinanceiro(id: string): Promise<void> {
-  await exigirPerfilFinanceiroCompleto()
+  const { perfil } = await exigirPerfilFinanceiroCompleto()
   const supabase = adminSupabase()
+  const { data: atual } = await supabase.from('lancamentos_financeiros').select('loja_id').eq('id', id).maybeSingle()
+  if (!atual) throw new Error('Lançamento não encontrado.')
+  await exigirLojaAtiva(perfil, atual.loja_id)
   const { error } = await supabase.from('lancamentos_financeiros').delete().eq('id', id)
   if (error) throw new Error(error.message)
   revalidatePath('/admin/financeiro')
@@ -1191,6 +1255,7 @@ async function exigirAcessoVendaLoja(lojaId: string): Promise<{ userId: string }
   if (!temAcessoLoja(perfil, lojaId)) {
     throw new Error('Você não tem permissão para gerenciar vendas desta loja.')
   }
+  await exigirLojaAtiva(perfil, lojaId)
   return { userId: user.id }
 }
 
@@ -1380,6 +1445,8 @@ export async function reprocessarVeiculosTroca(vendaId: string): Promise<Resulta
       .maybeSingle()
     if (error) return { ok: false, erro: `Erro ao carregar a venda: ${error.message}` }
     if (!venda) return { ok: false, erro: 'Venda não encontrada.' }
+    // O veículo da troca nasce na loja da venda — só com o seletor nela.
+    await exigirAcessoLoja(venda.loja_id)
     if (venda.status !== 'finalizada') {
       return { ok: false, erro: 'Esta venda ainda é rascunho — use "Finalizar Venda", que já cria o veículo da troca.' }
     }
@@ -1724,7 +1791,10 @@ async function exigirPerfil(
 ): Promise<{ userId: string; perfil: PerfilAcesso }> {
   const perfil = await exigirUsuarioAtivo()
   if (!permitido.includes(perfil.perfil)) throw new Error(mensagemErro)
-  if (lojaId !== undefined && !temAcessoLoja(perfil, lojaId)) throw new Error(mensagemErro)
+  if (lojaId !== undefined) {
+    if (!temAcessoLoja(perfil, lojaId)) throw new Error(mensagemErro)
+    await exigirLojaAtiva(perfil, lojaId)
+  }
   return { userId: perfil.id, perfil }
 }
 
@@ -1873,6 +1943,7 @@ export async function criarPromissoria(
   dados: { valor: number; vencimento: string; observacoes: string | null }
 ): Promise<void> {
   await exigirPerfilFinanceiroCompleto()
+  await exigirVendaDaLojaAtiva(vendaId)
   const supabase = adminSupabase()
 
   // Número da parcela é sequencial por venda, calculado aqui (não vem do
@@ -1895,25 +1966,41 @@ export async function criarPromissoria(
 
 export async function marcarPromissoriaPaga(id: string, vendaId: string): Promise<void> {
   await exigirPerfilFinanceiroCompleto()
+  await exigirVendaDaLojaAtiva(vendaId)
   const supabase = adminSupabase()
   const hoje = new Date().toISOString().split('T')[0]
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('venda_promissorias')
     .update({ pago: true, data_pagamento: hoje })
     .eq('id', id)
+    .eq('venda_id', vendaId)
+    .select('id')
   if (error) throw new Error(error.message)
+  if (!data?.length) throw new Error('Parcela não encontrada nesta venda.')
   revalidatePath('/admin/vendas/' + vendaId)
 }
 
 export async function desmarcarPromissoriaPaga(id: string, vendaId: string): Promise<void> {
   await exigirPerfilFinanceiroCompleto()
+  await exigirVendaDaLojaAtiva(vendaId)
   const supabase = adminSupabase()
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('venda_promissorias')
     .update({ pago: false, data_pagamento: null })
     .eq('id', id)
+    .eq('venda_id', vendaId)
+    .select('id')
   if (error) throw new Error(error.message)
+  if (!data?.length) throw new Error('Parcela não encontrada nesta venda.')
   revalidatePath('/admin/vendas/' + vendaId)
+}
+
+// Promissórias: a venda precisa ser da loja ativa (antes bastava ser admin,
+// qualquer venda de qualquer loja, e o id da parcela não era amarrado à venda).
+async function exigirVendaDaLojaAtiva(vendaId: string): Promise<void> {
+  const { data: venda } = await adminSupabase().from('vendas').select('loja_id').eq('id', vendaId).maybeSingle()
+  if (!venda) throw new Error('Venda não encontrada.')
+  await exigirAcessoLoja(venda.loja_id)
 }
 
 // ─── EXCLUSÃO DE VEÍCULO ───────────────────────────────────────────────────────

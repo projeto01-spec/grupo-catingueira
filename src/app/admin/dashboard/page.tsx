@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createServerSupabase, adminSupabase } from '@/lib/supabase-server'
-import { getLojaIdAtiva } from '@/lib/getLojaIdAtiva'
+import { obterLojaAtivaId } from '@/lib/loja-ativa'
 import type { Veiculo, Lead, UsuarioPerfil, Lembrete } from '@/types'
 import DashboardClient, { type UltimaVenda, type TopVendedor } from './DashboardClient'
 
@@ -27,7 +27,7 @@ export default async function DashboardPage() {
   const perfil = perfilData as UsuarioPerfil | null
   if (!perfil) redirect('/login')
 
-  const lojaId = await getLojaIdAtiva(perfil)
+  const lojaId = await obterLojaAtivaId(perfil)
   // Promissória é financeiro completo (mesmo padrão do resto do financeiro
   // reorganizado) — admin apenas. Na prática esta página já é 100% admin-only
   // via proxy.ts ("Dashboard: só admin"), então isso é defesa em profundidade

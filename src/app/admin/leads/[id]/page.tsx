@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import { adminSupabase, createServerSupabase } from '@/lib/supabase-server'
-import { getLojaIdAtiva } from '@/lib/getLojaIdAtiva'
+import { conferirLojaDoRegistro, obterLojaAtivaId } from '@/lib/loja-ativa'
+import AvisoOutraLoja from '@/components/admin/AvisoOutraLoja'
 import type { Lead, LeadInteracao, MensagemPadrao, UsuarioPerfil } from '@/types'
 import LeadDetailClient from './LeadDetailClient'
 
@@ -25,16 +26,32 @@ export default async function LeadDetailPage({
   if (!perfilData) redirect('/login')
   const perfil = perfilData as UsuarioPerfil
 
-  const lojaId = await getLojaIdAtiva(perfil)
+  const lojaId = await obterLojaAtivaId(perfil)
   const admin = adminSupabase()
 
-  // Nomes de outros usuários (autor da interação, lista de responsáveis) vêm
-  // pela service role: a RLS de usuarios_perfil só deixa cada um ler o
-  // próprio perfil (migration 023). O lead em si continua pela RLS e, se não
-  // for da loja ativa, a página dá 404 antes de usar qualquer dado abaixo.
+  // Lead de outra loja: aviso para trocar o seletor (admin/diretor) ou 404.
+  const { data: alvo } = await admin.from('leads').select('loja_id').eq('id', id).maybeSingle()
+  if (!alvo) notFound()
+  const conferencia = await conferirLojaDoRegistro(perfil, alvo.loja_id)
+  if (conferencia.status === 'outra-loja') {
+    return (
+      <AvisoOutraLoja
+        lojaId={conferencia.loja.id}
+        lojaNome={conferencia.loja.nome}
+        voltarHref="/admin/crm"
+        voltarTexto="Voltar para o CRM"
+      />
+    )
+  }
+  if (conferencia.status === 'negado') notFound()
+
+  // Tudo pela service role com filtro explícito da loja ativa: a RLS de
+  // leads/mensagens usa perfil.loja_id e esconderia os dados da loja do
+  // seletor para admin/diretor; a de usuarios_perfil só libera o próprio
+  // perfil (migration 023).
   const [{ data: leadData }, { data: interacoesData }, { data: vendedoresData }, { data: templatesData }] =
     await Promise.all([
-      supabase
+      admin
         .from('leads')
         .select('*, veiculo:veiculos(id, marca, modelo, ano)')
         .eq('id', id)
@@ -51,7 +68,7 @@ export default async function LeadDetailPage({
         .select('id, nome')
         .eq('loja_id', lojaId)
         .eq('ativo', true),
-      supabase
+      admin
         .from('mensagens_padrao')
         .select('*')
         .eq('loja_id', lojaId)

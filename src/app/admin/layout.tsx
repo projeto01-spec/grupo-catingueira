@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
-import { cookies } from 'next/headers'
 import { createServerSupabase } from '@/lib/supabase-server'
+import { resolverLojaAtiva } from '@/lib/loja-ativa'
 import { createClient } from '@supabase/supabase-js'
 import { AdminProvider } from '@/contexts/AdminContext'
 import type { Loja, UsuarioPerfil } from '@/types'
@@ -51,23 +51,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     return true
   })
 
-  // Vendedor/gerente só enxerga a própria loja; admin/diretor enxerga todas
-  const lojas: Loja[] =
-    perfil.perfil === 'admin' || perfil.perfil === 'diretor'
-      ? todasLojas
-      : todasLojas.filter(l => l.id === perfil.loja_id)
-
-  // lojaAtiva começa como lojas[0] — nunca null quando há lojas
-  let lojaAtiva: Loja | null = lojas[0] ?? null
-
-  if ((perfil.perfil === 'admin' || perfil.perfil === 'diretor') && lojas.length > 0) {
-    const cookieStore = await cookies()
-    const lojaAtivaCookie = cookieStore.get('loja_ativa')?.value
-    const lojaOverride = lojaAtivaCookie
-      ? lojas.find(l => l.id === lojaAtivaCookie)
-      : undefined
-    lojaAtiva = lojaOverride ?? lojas[0]
-  }
+  // Mesma regra das páginas, actions e PDFs (lib/loja-ativa.ts) — antes o
+  // seletor caía em lojas[0] sem cookie e as páginas em perfil.loja_id, e o
+  // rótulo mostrava uma loja com os dados da outra.
+  const ativa = await resolverLojaAtiva(perfil)
+  const idsPermitidos = new Set(ativa.lojasPermitidas.map(l => l.id))
+  const lojas: Loja[] = todasLojas.filter(l => idsPermitidos.has(l.id))
+  const lojaAtiva: Loja | null = todasLojas.find(l => l.id === ativa.loja?.id) ?? null
 
   const perfilComLoja: UsuarioPerfil & { loja: Loja | null } = {
     ...perfil,

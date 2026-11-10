@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { adminSupabase } from '@/lib/supabase-server'
-import { obterPerfilDaSessao, podeAcessarVendas, temAcessoLoja } from '@/lib/acesso'
+import { obterPerfilDaSessao, podeAcessarVendas } from '@/lib/acesso'
+import { bloqueioPorLoja } from '@/lib/pdf-acesso'
 import { getTenantLogoUrl } from '@/lib/tenant-assets'
 import { html, raw } from '@/lib/escape-html'
 
@@ -79,9 +80,9 @@ export async function GET(
   if (error || !venda) {
     return new NextResponse('Venda não encontrada', { status: 404 })
   }
-  if (!temAcessoLoja(perfil, venda.loja_id)) {
-    return new NextResponse('Sem permissão', { status: 403 })
-  }
+  // Venda precisa ser da loja ativa do painel (seletor).
+  const bloqueio = await bloqueioPorLoja(perfil, venda.loja_id)
+  if (bloqueio) return bloqueio
 
   const { data: lojaData } = await supabase
     .from('lojas')

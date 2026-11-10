@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createServerSupabase, adminSupabase } from '@/lib/supabase-server'
-import { getLojaIdAtiva } from '@/lib/getLojaIdAtiva'
+import { obterLojaAtivaId } from '@/lib/loja-ativa'
 import type { LancamentoFinanceiro, UsuarioPerfil } from '@/types'
 import FinanceiroClient, {
   type VendaResumo,
@@ -39,7 +39,7 @@ export default async function FinanceiroPage({
   // inalterada por essa reorganização.
   if (!['admin', 'socio'].includes(perfil.perfil)) redirect('/admin/crm')
 
-  const lojaId = await getLojaIdAtiva(perfil)
+  const lojaId = await obterLojaAtivaId(perfil)
   const admin = adminSupabase()
   const isSocio = perfil.perfil === 'socio'
 

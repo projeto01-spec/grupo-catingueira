@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createServerSupabase, adminSupabase } from '@/lib/supabase-server'
-import { getLojaIdAtiva } from '@/lib/getLojaIdAtiva'
+import { conferirLojaDoRegistro, obterLojaAtivaId } from '@/lib/loja-ativa'
+import AvisoOutraLoja from '@/components/admin/AvisoOutraLoja'
 import type { UsuarioPerfil, Veiculo, Venda, VendaPagamento } from '@/types'
 import NovaVendaClient from './NovaVendaClient'
 
@@ -23,9 +24,30 @@ export default async function NovaVendaPage({ searchParams }: Props) {
   if (!perfilData) redirect('/login')
 
   const perfil = perfilData as UsuarioPerfil
-  const lojaId = await getLojaIdAtiva(perfil)
+  const lojaId = await obterLojaAtivaId(perfil)
 
   const admin = adminSupabase()
+
+  // Rascunho (?venda_id=) ou veículo pré-selecionado (?veiculo_id=) de OUTRA
+  // loja: antes era ignorado em silêncio e o usuário começava uma venda nova
+  // na loja errada sem perceber. Agora mostra o aviso para trocar o seletor
+  // (admin/diretor); para os demais perfis continua ignorado.
+  for (const [tabela, registroId] of [['vendas', venda_id], ['veiculos', veiculo_id]] as const) {
+    if (!registroId) continue
+    const { data: alvo } = await admin.from(tabela).select('loja_id').eq('id', registroId).maybeSingle()
+    if (!alvo) continue
+    const conferencia = await conferirLojaDoRegistro(perfil, alvo.loja_id)
+    if (conferencia.status === 'outra-loja') {
+      return (
+        <AvisoOutraLoja
+          lojaId={conferencia.loja.id}
+          lojaNome={conferencia.loja.nome}
+          voltarHref="/admin/vendas"
+          voltarTexto="Voltar para as vendas"
+        />
+      )
+    }
+  }
 
   // Retomar um rascunho pelo assistente (?venda_id=) — só faz sentido pra
   // venda ainda não finalizada; se já foi finalizada (link antigo, favorito),

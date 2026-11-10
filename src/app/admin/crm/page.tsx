@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { adminSupabase, createServerSupabase } from '@/lib/supabase-server'
-import { getLojaIdAtiva } from '@/lib/getLojaIdAtiva'
+import { obterLojaAtivaId } from '@/lib/loja-ativa'
 import type { Lead, UsuarioPerfil, Loja } from '@/types'
 import CrmClient from './CrmClient'
 
@@ -31,10 +31,13 @@ export default async function CrmPage({
   if (!perfilData) redirect('/login')
   const perfil = perfilData as UsuarioPerfil & { loja: Loja | null }
 
-  const lojaId = await getLojaIdAtiva(perfil)
+  const lojaId = await obterLojaAtivaId(perfil)
 
+  // Service role + filtro explícito da loja ativa: a RLS de leads usa
+  // perfil.loja_id e mostrava a lista vazia para admin/diretor com o seletor
+  // na outra loja.
   const [{ data: leadsData }, { data: vendedoresData }] = await Promise.all([
-    supabase
+    adminSupabase()
       .from('leads')
       .select('*, veiculo:veiculos(marca, modelo, ano)')
       .eq('loja_id', lojaId)

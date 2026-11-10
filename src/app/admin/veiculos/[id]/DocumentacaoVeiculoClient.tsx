@@ -90,23 +90,7 @@ export default function DocumentacaoVeiculoClient({ veiculoId, aquisicao, anexos
 
   return (
     <div className="space-y-6">
-      {/* Histórico de transferências entre lojas */}
-      {transferencias.length > 0 && (
-        <div className="bg-white border border-[#E5E7EB] rounded-xl p-5 shadow-sm">
-          <h2 className="text-[#111827] font-bold text-sm uppercase tracking-wider mb-4">
-            Histórico de lojas
-          </h2>
-          <ul className="space-y-1.5">
-            {transferencias.map(t => (
-              <li key={t.id} className="text-sm text-[#374151]">
-                Já pertenceu a: <span className="font-medium">{t.loja_origem?.nome ?? 'loja anterior'}</span>{' '}
-                (até {new Date(t.data_transferencia).toLocaleDateString('pt-BR')})
-                {t.observacoes && <span className="text-[#6B7280]"> — {t.observacoes}</span>}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {/* Histórico de lojas: agora fica na aba Dados (HistoricoLojasVeiculo), visível para todos. */}
 
       {/* Aquisição */}
       <div className="bg-white border border-[#E5E7EB] rounded-xl p-5 shadow-sm">

@@ -7,6 +7,7 @@ import FotosVeiculoClient from './FotosVeiculoClient'
 import CustosVeiculoClient from './CustosVeiculoClient'
 import DocumentacaoVeiculoClient, { type AnexoComUrl } from './DocumentacaoVeiculoClient'
 import VistoriaClient from './vistoria/VistoriaClient'
+import HistoricoLojasVeiculo from './HistoricoLojasVeiculo'
 import { ITENS_VISTORIA } from '@/lib/vistoriaItens'
 import type { Veiculo, FinanceiroVeiculo, CustoManutencao, VeiculoAquisicao, VistoriaVeiculo, VeiculoTransferencia } from '@/types'
 
@@ -23,10 +24,11 @@ interface Props {
   anexos: AnexoComUrl[]
   vistoria: VistoriaVeiculo | null
   transferencias: VeiculoTransferencia[]
+  lojaCadastroNome: string
   abaInicial?: Aba
 }
 
-export default function VeiculoTabs({ veiculo, financeiro, custos, lojaId, podeVerDocumentacao, podeVerFinanceiroCompleto, aquisicao, anexos, vistoria, transferencias, abaInicial }: Props) {
+export default function VeiculoTabs({ veiculo, financeiro, custos, lojaId, podeVerDocumentacao, podeVerFinanceiroCompleto, aquisicao, anexos, vistoria, transferencias, lojaCadastroNome, abaInicial }: Props) {
   const [aba, setAba] = useState<Aba>(abaInicial ?? 'dados')
 
   const abas: { id: Aba; label: string }[] = [
@@ -59,7 +61,14 @@ export default function VeiculoTabs({ veiculo, financeiro, custos, lojaId, podeV
       </ScrollFade>
 
       {aba === 'dados' && (
-        <VeiculoForm veiculo={veiculo} lojaId={lojaId} hideFotos noRedirect />
+        <>
+          <HistoricoLojasVeiculo
+            lojaCadastroNome={lojaCadastroNome}
+            criadoEm={veiculo.created_at}
+            transferencias={transferencias}
+          />
+          <VeiculoForm veiculo={veiculo} lojaId={lojaId} hideFotos noRedirect />
+        </>
       )}
 
       {aba === 'fotos' && (

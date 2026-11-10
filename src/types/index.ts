@@ -313,6 +313,8 @@ export interface VeiculoTransferencia {
   observacoes: string | null
   loja_origem?: Pick<Loja, 'nome'> | null
   loja_destino?: Pick<Loja, 'nome'> | null
+  /** Quem fez a transferência (join em usuarios_perfil via transferido_por). */
+  usuario?: Pick<UsuarioPerfil, 'nome'> | null
 }
 
 export interface VeiculoRecebidoVenda {

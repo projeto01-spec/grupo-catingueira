@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { adminSupabase } from '@/lib/supabase-server'
-import { obterPerfilDaSessao, temAcessoLoja } from '@/lib/acesso'
+import { obterPerfilDaSessao } from '@/lib/acesso'
+import { bloqueioPorLoja } from '@/lib/pdf-acesso'
 import { corCssSegura, html, raw } from '@/lib/escape-html'
 
 function formatarPreco(v: number) {
@@ -33,12 +34,13 @@ export async function GET(
   }
   // Mesma regra da ficha: acesso à loja do veículo; sócio só em veículo de
   // propriedade dividida (validarVeiculoParaSocio em actions.ts).
-  if (
-    !temAcessoLoja(perfil, veiculo.loja_id) ||
-    (perfil.perfil === 'socio' && veiculo.proprietario_tipo !== 'dividido')
-  ) {
+  if (perfil.perfil === 'socio' && veiculo.proprietario_tipo !== 'dividido') {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
   }
+  // Veículo precisa ser da loja ativa do painel (seletor), não só de uma
+  // loja a que o usuário tem acesso.
+  const bloqueio = await bloqueioPorLoja(perfil, veiculo.loja_id)
+  if (bloqueio) return bloqueio
 
   const loja = veiculo.loja as {
     nome: string

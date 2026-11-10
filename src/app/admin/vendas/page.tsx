@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createServerSupabase, adminSupabase } from '@/lib/supabase-server'
-import { getLojaIdAtiva } from '@/lib/getLojaIdAtiva'
+import { obterLojaAtivaId } from '@/lib/loja-ativa'
 import type { UsuarioPerfil, Venda } from '@/types'
 import VendasClient from './VendasClient'
 
@@ -17,7 +17,7 @@ export default async function VendasPage() {
   if (!perfilData) redirect('/login')
 
   const perfil = perfilData as UsuarioPerfil
-  const lojaId = await getLojaIdAtiva(perfil)
+  const lojaId = await obterLojaAtivaId(perfil)
 
   const admin = adminSupabase()
   const { data } = await admin

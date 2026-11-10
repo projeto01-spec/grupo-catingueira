@@ -1,6 +1,7 @@
 import { redirect, notFound } from 'next/navigation'
 import { createServerSupabase, adminSupabase } from '@/lib/supabase-server'
-import { getLojaIdAtiva } from '@/lib/getLojaIdAtiva'
+import { conferirLojaDoRegistro, obterLojaAtivaId } from '@/lib/loja-ativa'
+import AvisoOutraLoja from '@/components/admin/AvisoOutraLoja'
 import type { AnexoComUrl } from '@/components/admin/AnexosClient'
 import type { UsuarioPerfil, Venda, Loja, Anexo, VendaPagamento, VendaPromissoria } from '@/types'
 import VendaDetalheClient from './VendaDetalheClient'
@@ -24,13 +25,29 @@ export default async function VendaDetalhePage({ params }: Props) {
   if (!perfilData) redirect('/login')
 
   const perfil = perfilData as UsuarioPerfil
-  const lojaId = await getLojaIdAtiva(perfil)
+  const lojaId = await obterLojaAtivaId(perfil)
   // "Lançar despesa neste veículo" e Promissórias são financeiro completo —
   // admin apenas. Anexos de venda (abaixo) não usam nenhuma dessas duas
   // flags — continuam abertos a qualquer perfil da loja, como já eram.
   const podeVerFinanceiroCompleto = perfil.perfil === 'admin'
 
   const admin = adminSupabase()
+
+  // Venda de outra loja: aviso para trocar o seletor (admin/diretor) ou 404.
+  const { data: alvo } = await admin.from('vendas').select('loja_id').eq('id', id).maybeSingle()
+  if (!alvo) notFound()
+  const conferencia = await conferirLojaDoRegistro(perfil, alvo.loja_id)
+  if (conferencia.status === 'outra-loja') {
+    return (
+      <AvisoOutraLoja
+        lojaId={conferencia.loja.id}
+        lojaNome={conferencia.loja.nome}
+        voltarHref="/admin/vendas"
+        voltarTexto="Voltar para as vendas"
+      />
+    )
+  }
+  if (conferencia.status === 'negado') notFound()
 
   const [{ data: vendaData }, { data: lojaData }, { data: anexosData }, { data: pagamentosData }, { data: promissoriasData }] = await Promise.all([
     admin

@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 import { createServerSupabase, adminSupabase } from '@/lib/supabase-server'
-import { getLojaIdAtiva } from '@/lib/getLojaIdAtiva'
+import { conferirLojaDoRegistro, nomeDaLoja, obterLojaAtivaId } from '@/lib/loja-ativa'
+import AvisoOutraLoja from '@/components/admin/AvisoOutraLoja'
 import MarcaVendidoButton from '@/components/admin/MarcaVendidoButton'
 import ExcluirVeiculoButton from '@/components/admin/ExcluirVeiculoButton'
 import TransferirVeiculoButton from '@/components/admin/TransferirVeiculoButton'
@@ -29,7 +30,7 @@ export default async function EditarVeiculoPage({
   if (!perfilData) redirect('/login')
   const perfil = perfilData as UsuarioPerfil
 
-  const lojaId = await getLojaIdAtiva(perfil)
+  const lojaId = await obterLojaAtivaId(perfil)
   // Documentação (aquisição/anexos do veículo, histórico de transferência) —
   // gerente/diretor/admin, como sempre foi.
   const podeVerDocumentacao = ['gerente', 'diretor', 'admin'].includes(perfil.perfil)
@@ -48,6 +49,24 @@ export default async function EditarVeiculoPage({
       : undefined
 
   const admin = adminSupabase()
+
+  // Conferência de loja ANTES de carregar qualquer dado: veículo de outra loja
+  // → aviso com botão para trocar o seletor (admin/diretor) ou 404 (demais).
+  const { data: alvo } = await admin.from('veiculos').select('loja_id').eq('id', id).maybeSingle()
+  if (!alvo) notFound()
+  const conferencia = await conferirLojaDoRegistro(perfil, alvo.loja_id)
+  if (conferencia.status === 'outra-loja') {
+    return (
+      <AvisoOutraLoja
+        lojaId={conferencia.loja.id}
+        lojaNome={conferencia.loja.nome}
+        voltarHref="/admin/veiculos"
+        voltarTexto="Voltar para os veículos"
+      />
+    )
+  }
+  if (conferencia.status === 'negado') notFound()
+
   const [
     { data },
     { data: finData },
@@ -106,13 +125,15 @@ export default async function EditarVeiculoPage({
     podeVerDocumentacao
       ? admin.from('lojas').select('id, nome').order('nome')
       : Promise.resolve({ data: [] as { id: string; nome: string }[] }),
-    podeVerDocumentacao
-      ? admin
-          .from('veiculo_transferencias')
-          .select('*, loja_origem:lojas!veiculo_transferencias_loja_origem_id_fkey(nome)')
-          .eq('veiculo_id', id)
-          .order('data_transferencia', { ascending: false })
-      : Promise.resolve({ data: [] as VeiculoTransferencia[] }),
+    // Histórico de lojas: exibido na aba Dados para todos os perfis (não é
+    // dado sensível — só lojas, datas e quem transferiu).
+    admin
+      .from('veiculo_transferencias')
+      .select(
+        '*, loja_origem:lojas!veiculo_transferencias_loja_origem_id_fkey(nome), loja_destino:lojas!veiculo_transferencias_loja_destino_id_fkey(nome), usuario:usuarios_perfil(nome)'
+      )
+      .eq('veiculo_id', id)
+      .order('data_transferencia', { ascending: true }),
   ])
 
   if (!data) notFound()
@@ -136,6 +157,9 @@ export default async function EditarVeiculoPage({
     l => l.id !== veiculo.loja_id
   )
   const transferencias = (transferenciasData ?? []) as VeiculoTransferencia[]
+  // Loja de cadastro: a origem da 1ª transferência; sem transferências, a atual.
+  const lojaCadastroNome = transferencias[0]?.loja_origem?.nome
+    ?? (await nomeDaLoja(transferencias[0]?.loja_origem_id ?? veiculo.loja_id))
 
   const anexos: AnexoComUrl[] = await Promise.all(
     ((anexosData ?? []) as Anexo[]).map(async a => {
@@ -215,6 +239,7 @@ export default async function EditarVeiculoPage({
         anexos={anexos}
         vistoria={vistoria}
         transferencias={transferencias}
+        lojaCadastroNome={lojaCadastroNome}
         abaInicial={abaInicial}
       />
     </div>

@@ -1,8 +1,10 @@
 import { notFound, redirect } from 'next/navigation'
 import Link from 'next/link'
-import { createServerSupabase } from '@/lib/supabase-server'
+import { adminSupabase, createServerSupabase } from '@/lib/supabase-server'
+import { conferirLojaDoRegistro } from '@/lib/loja-ativa'
+import AvisoOutraLoja from '@/components/admin/AvisoOutraLoja'
 import { ITENS_VISTORIA } from '@/lib/vistoriaItens'
-import type { Veiculo, VistoriaVeiculo, UsuarioPerfil } from '@/types'
+import type { VistoriaVeiculo, UsuarioPerfil } from '@/types'
 import VistoriaClient from './VistoriaClient'
 
 export default async function VistoriaPage({
@@ -26,23 +28,36 @@ export default async function VistoriaPage({
   if (!perfilData) redirect('/login')
   const perfil = perfilData as UsuarioPerfil
 
-  const [{ data: veiculoData }, { data: vistoriaData }] = await Promise.all([
-    supabase
-      .from('veiculos')
-      .select('*')
-      .eq('id', id)
-      .eq('loja_id', perfil.loja_id)
-      .single(),
-    supabase
-      .from('vistoria_veiculo')
-      .select('*')
-      .eq('veiculo_id', id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  ])
-
+  // Antes filtrava por perfil.loja_id (ignorava o seletor). Agora: loja do
+  // veículo conferida contra a loja ativa, lendo com service role.
+  const admin = adminSupabase()
+  const { data: veiculoData } = await admin
+    .from('veiculos')
+    .select('id, loja_id, marca, modelo, ano')
+    .eq('id', id)
+    .maybeSingle()
   if (!veiculoData) notFound()
+
+  const conferencia = await conferirLojaDoRegistro(perfil, veiculoData.loja_id)
+  if (conferencia.status === 'outra-loja') {
+    return (
+      <AvisoOutraLoja
+        lojaId={conferencia.loja.id}
+        lojaNome={conferencia.loja.nome}
+        voltarHref="/admin/veiculos"
+        voltarTexto="Voltar para os veículos"
+      />
+    )
+  }
+  if (conferencia.status === 'negado') notFound()
+
+  const { data: vistoriaData } = await admin
+    .from('vistoria_veiculo')
+    .select('*')
+    .eq('veiculo_id', id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
 
   return (
     <div className="p-6 md:p-8 max-w-3xl">
@@ -66,7 +81,7 @@ export default async function VistoriaPage({
 
       <VistoriaClient
         veiculoId={id}
-        lojaId={perfil.loja_id}
+        lojaId={veiculoData.loja_id}
         itensConfig={ITENS_VISTORIA}
         vistoria={vistoriaData as VistoriaVeiculo | null}
       />
