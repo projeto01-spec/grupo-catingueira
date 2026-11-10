@@ -23,32 +23,38 @@ end $$;
 drop policy if exists publico_ve_disponiveis on public.veiculos;
 drop policy if exists "público vê disponíveis" on public.veiculos;
 
--- Qualquer outra policy de leitura em veiculos que não dependa de usuário
--- logado (USING sem auth.uid()) também é pública — remove.
+-- Outras policies de leitura em veiculos que NÃO usam auth.uid() só são
+-- AVISADAS, não removidas: uma policy da equipe escrita com função auxiliar
+-- (sem auth.uid() literal) cairia aqui e derrubaria o acesso do admin.
+-- Para a anon key isso não importa: o REVOKE abaixo já tira todo acesso dela
+-- à tabela, independentemente das policies. Confira os avisos na aba de
+-- mensagens do SQL Editor.
 do $$
 declare
   r record;
 begin
   for r in
-    select policyname
+    select policyname, roles, qual
     from pg_policies
     where schemaname = 'public'
       and tablename = 'veiculos'
       and cmd in ('SELECT', 'ALL')
       and coalesce(qual, '') not ilike '%auth.uid()%'
   loop
-    execute format('drop policy %I on public.veiculos', r.policyname);
-    raise notice 'veiculos: policy pública removida: %', r.policyname;
+    raise warning 'veiculos: policy sem auth.uid() mantida — revise: % (roles=%, USING=%)', r.policyname, r.roles, r.qual;
   end loop;
 end $$;
 
--- Defesa extra além da RLS: a anon key não tem mais privilégio nenhum na tabela.
+-- A anon key perde SELECT/INSERT/UPDATE/DELETE (e TRUNCATE/REFERENCES/TRIGGER)
+-- na tabela. Isto NÃO mexe no papel `authenticated` (equipe logada no admin,
+-- que continua pela policy da própria loja) nem na service role (Server
+-- Actions e páginas do admin, que ignoram RLS e grants de anon).
 revoke all on public.veiculos from anon;
 
 
 -- ============================================================
 -- ROLLBACK (comentado) — devolve a leitura pública direta de veiculos.
 -- ============================================================
--- grant select on public.veiculos to anon;
+-- grant select, insert, update, delete on public.veiculos to anon;
 -- create policy publico_ve_disponiveis on public.veiculos for select
 --   using (status = 'disponivel' and rascunho = false);
