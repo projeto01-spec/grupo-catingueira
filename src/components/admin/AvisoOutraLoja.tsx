@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { setLojaAtiva } from '@/app/actions'
 
 // Mostrado no lugar de uma página de detalhe quando o registro (veículo,
-// venda, lead) é de outra loja e o usuário é admin/diretor. Demais perfis
+// venda, lead) é de outra loja e o usuário tem acesso a ela (mais de uma loja). Demais
 // recebem 404 (ver conferirLojaDoRegistro em lib/loja-ativa.ts).
 export default function AvisoOutraLoja({
   lojaId,

@@ -93,9 +93,10 @@ export default async function DashboardPage() {
       .eq('status', 'finalizada')
       .order('created_at', { ascending: false })
       .limit(5),
+    // Só para pôr nome no vendedor_id das vendas do mês: sem filtro de loja,
+    // porque quem vendeu nesta loja pode ter outra loja padrão (usuarios_lojas).
     admin.from('usuarios_perfil')
-      .select('id, nome')
-      .eq('loja_id', lojaId),
+      .select('id, nome'),
     // Promissórias pendentes vencendo em breve (ou já vencidas) — viram
     // lembretes "virtuais" abaixo, nunca são gravadas na tabela lembretes.
     // Financeiro completo — admin apenas.

@@ -154,6 +154,8 @@ export interface UsuarioPerfil {
   ativo: boolean
   modulos_permitidos: string[]
   created_at: string
+  /** Lojas com acesso (usuarios_lojas, migration 024). Admin/diretor: todas, sem lista. */
+  lojas_acesso?: string[]
 }
 
 export interface LeadInteracao {

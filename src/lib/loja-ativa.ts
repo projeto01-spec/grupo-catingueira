@@ -1,6 +1,7 @@
 import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { adminSupabase } from '@/lib/supabase-server'
+import { carregarLojasAcesso, ehPerfilTodasLojas } from '@/lib/acesso'
 import type { Perfil } from '@/types'
 
 // ─── Loja ativa do painel admin — FONTE ÚNICA ─────────────────────────────────
@@ -12,32 +13,32 @@ import type { Perfil } from '@/types'
 //
 // Regra única (usada pelo layout, por todas as páginas do admin, pelas Server
 // Actions e pelas rotas /api/pdf):
-//   - admin/diretor: cookie `loja_ativa`, validado contra as lojas existentes;
-//     sem cookie válido → perfil.loja_id → primeira loja.
-//   - demais perfis: sempre perfil.loja_id (não trocam de loja).
+//   - lojas permitidas: admin/diretor → todas; demais → as marcadas no
+//     cadastro (usuarios_lojas, migration 024).
+//   - loja ativa: cookie `loja_ativa` SE estiver entre as permitidas; senão a
+//     loja padrão (perfil.loja_id); senão a primeira permitida. Quem perdeu
+//     acesso à loja do cookie cai na padrão no próximo carregamento.
+//   - seletor: só para quem tem mais de uma loja permitida.
 // Ninguém mais lê perfil.loja_id direto para filtrar dados.
-//
-// Para liberar "acesso às duas lojas" a um gerente no futuro, basta mudar
-// `lojasPermitidas` (ver proposta de usuarios_lojas no relatório da Fase 1).
 
 export const COOKIE_LOJA_ATIVA = 'loja_ativa'
 
 export type LojaResumo = { id: string; nome: string }
 
-/** O mínimo do perfil que a regra precisa (serve UsuarioPerfil e PerfilAcesso). */
-export type PerfilLoja = { perfil: Perfil; loja_id: string }
+/**
+ * O mínimo do perfil que a regra precisa (serve UsuarioPerfil e PerfilAcesso).
+ * `lojas_acesso` vem pronto no PerfilAcesso; para UsuarioPerfil é carregado
+ * aqui pelo `id`.
+ */
+export type PerfilLoja = { id: string; perfil: Perfil; loja_id: string; lojas_acesso?: string[] }
 
 export type LojaAtiva = {
   /** Loja em uso no painel (null só se não houver loja nenhuma cadastrada). */
   loja: LojaResumo | null
   /** Lojas que o usuário pode selecionar. */
   lojasPermitidas: LojaResumo[]
-  /** Se o usuário pode trocar de loja pelo seletor. */
+  /** Se o usuário pode trocar de loja pelo seletor (tem mais de uma). */
   podeTrocar: boolean
-}
-
-export function podeTrocarLoja(perfil: PerfilLoja): boolean {
-  return perfil.perfil === 'admin' || perfil.perfil === 'diretor'
 }
 
 // Uma consulta por requisição (layout + página + actions compartilham).
@@ -47,23 +48,26 @@ const listarLojas = cache(async (): Promise<LojaResumo[]> => {
   return ((data ?? []) as LojaResumo[]).filter(l => (vistos.has(l.id) ? false : (vistos.add(l.id), true)))
 })
 
+const lojasAcessoDoUsuario = cache(
+  (userId: string, lojaPadrao: string): Promise<string[]> => carregarLojasAcesso(userId, lojaPadrao)
+)
+
 export async function lojasPermitidas(perfil: PerfilLoja): Promise<LojaResumo[]> {
   const lojas = await listarLojas()
-  return podeTrocarLoja(perfil) ? lojas : lojas.filter(l => l.id === perfil.loja_id)
+  if (ehPerfilTodasLojas(perfil.perfil)) return lojas
+  const ids = perfil.lojas_acesso ?? (await lojasAcessoDoUsuario(perfil.id, perfil.loja_id))
+  return lojas.filter(l => ids.includes(l.id))
 }
 
 export async function resolverLojaAtiva(perfil: PerfilLoja): Promise<LojaAtiva> {
   const permitidas = await lojasPermitidas(perfil)
-  const podeTrocar = podeTrocarLoja(perfil)
+  const doCookie = (await cookies()).get(COOKIE_LOJA_ATIVA)?.value
+  const loja =
+    permitidas.find(l => l.id === doCookie) ??
+    permitidas.find(l => l.id === perfil.loja_id) ??
+    permitidas[0]
 
-  let loja: LojaResumo | undefined
-  if (podeTrocar) {
-    const doCookie = (await cookies()).get(COOKIE_LOJA_ATIVA)?.value
-    loja = permitidas.find(l => l.id === doCookie)
-  }
-  loja ??= permitidas.find(l => l.id === perfil.loja_id) ?? permitidas[0]
-
-  return { loja: loja ?? null, lojasPermitidas: permitidas, podeTrocar }
+  return { loja: loja ?? null, lojasPermitidas: permitidas, podeTrocar: permitidas.length > 1 }
 }
 
 /** Id da loja ativa (atalho para filtros). */
@@ -79,7 +83,7 @@ export async function nomeDaLoja(lojaId: string | null | undefined): Promise<str
 
 export type ConferenciaLoja =
   | { status: 'ok' }
-  /** Admin/diretor com o seletor em outra loja: pode trocar e abrir. */
+  /** Usuário com acesso a mais de uma loja e o seletor em outra: pode trocar e abrir. */
   | { status: 'outra-loja'; loja: LojaResumo }
   /** Sem acesso à loja do registro (ou registro sem loja): tratar como 404. */
   | { status: 'negado' }

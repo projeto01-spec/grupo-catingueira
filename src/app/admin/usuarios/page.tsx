@@ -91,12 +91,32 @@ export default async function UsuariosPage() {
       emailMap[u.id] = u.email ?? ''
     }
 
-    const usuarios = usuariosPerfil.map(u => ({
-      ...u,
-      email: emailMap[u.id] ?? '',
-    }))
+    // Lojas com acesso de cada usuário (usuarios_lojas, migration 024). Sem
+    // linhas (ou tabela ainda não criada) → só a loja padrão, como antes.
+    const lojasPorUsuario: Record<string, string[]> = {}
+    if (usuariosPerfil.length > 0) {
+      const { data: vinculos, error: vinculosError } = await admin
+        .from('usuarios_lojas')
+        .select('usuario_id, loja_id')
+        .in('usuario_id', usuariosPerfil.map(u => u.id))
+      if (vinculosError) console.error('[UsuariosPage] Erro ao buscar usuarios_lojas:', vinculosError.message)
+      for (const v of (vinculos ?? []) as { usuario_id: string; loja_id: string }[]) {
+        ;(lojasPorUsuario[v.usuario_id] ??= []).push(v.loja_id)
+      }
+    }
 
-    return <UsuariosClient perfil={perfil} usuarios={usuarios} lojas={lojas} />
+    const usuarios = usuariosPerfil.map(u => {
+      const marcadas = lojasPorUsuario[u.id] ?? []
+      return {
+        ...u,
+        email: emailMap[u.id] ?? '',
+        lojas_acesso: marcadas.includes(u.loja_id) ? marcadas : [u.loja_id, ...marcadas],
+      }
+    })
+
+    // Opções de "Lojas com acesso": todas as lojas (admin e diretor têm acesso
+    // a todas). A lista de usuários continua no escopo de cada gestor (acima).
+    return <UsuariosClient perfil={perfil} usuarios={usuarios} lojas={todasLojas} />
 
   } catch (err) {
     // Loga o erro real antes de propagar — no Vercel aparece em Functions logs

@@ -5,7 +5,7 @@ import { cookies, headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 import { createServerClient } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
-import { obterPerfilAtivo, podeAcessarVendas, temAcessoLoja, type PerfilAcesso } from '@/lib/acesso'
+import { ehPerfilTodasLojas, obterPerfilAtivo, podeAcessarVendas, temAcessoLoja, usuarioTrabalhaNaLoja, type PerfilAcesso } from '@/lib/acesso'
 import { getLoja } from '@/lib/getLoja'
 import { COOKIE_LOJA_ATIVA, lojasPermitidas, mensagemOutraLoja, nomeDaLoja, obterLojaAtivaId } from '@/lib/loja-ativa'
 import { BUCKET_FOTOS, caminhoDaUrlPublicaFoto, ehCaminhoFotoVeiculo, lojaDoCaminhoFoto } from '@/lib/storage-fotos'
@@ -203,6 +203,45 @@ async function tentarDefinirBloqueioAuth(userId: string, bloqueado: boolean): Pr
   return null
 }
 
+// ─── Lojas com acesso (usuarios_lojas, migration 024) ──────────────────────────
+//
+// Admin/diretor: acesso a todas as lojas automaticamente — grava só a loja
+// padrão (a lista não é usada para eles). Demais perfis: pelo menos uma loja,
+// loja padrão entre as marcadas, todas existentes. Sócio continua só na
+// Felizardo (validarPerfilLoja), agora conferido em cada loja marcada.
+async function validarLojasAcesso(perfil: Perfil, lojaPadrao: string, lojasAcesso: string[] | undefined): Promise<string[]> {
+  if (!lojaPadrao) throw new Error('Escolha a loja padrão.')
+  if (ehPerfilTodasLojas(perfil)) {
+    await validarPerfilLoja(perfil, lojaPadrao)
+    return [lojaPadrao]
+  }
+  const lista = Array.from(new Set((lojasAcesso ?? [lojaPadrao]).filter(l => typeof l === 'string' && l)))
+  if (lista.length === 0) throw new Error('Marque pelo menos uma loja com acesso.')
+  if (!lista.includes(lojaPadrao)) throw new Error('A loja padrão precisa estar entre as lojas com acesso.')
+  const { data } = await adminSupabase().from('lojas').select('id').in('id', lista)
+  if ((data ?? []).length !== lista.length) throw new Error('Há uma loja inválida na lista de acesso.')
+  for (const lojaId of lista) await validarPerfilLoja(perfil, lojaId)
+  return lista
+}
+
+// Deixa usuarios_lojas exatamente igual à lista (insere as novas, remove as
+// desmarcadas). Service role — o navegador não tem escrita nessa tabela.
+async function sincronizarLojasAcesso(userId: string, lista: string[]): Promise<void> {
+  const supabase = adminSupabase()
+  const { error: erroInsert } = await supabase
+    .from('usuarios_lojas')
+    .upsert(lista.map(loja_id => ({ usuario_id: userId, loja_id })), { onConflict: 'usuario_id,loja_id', ignoreDuplicates: true })
+  if (erroInsert) {
+    throw new Error(`Erro ao salvar as lojas do usuário: ${erroInsert.message}. (A migration 024 foi aplicada?)`)
+  }
+  const { error: erroDelete } = await supabase
+    .from('usuarios_lojas')
+    .delete()
+    .eq('usuario_id', userId)
+    .not('loja_id', 'in', `(${lista.join(',')})`)
+  if (erroDelete) throw new Error(`Erro ao remover lojas desmarcadas: ${erroDelete.message}`)
+}
+
 async function carregarAlvo(id: string): Promise<{ id: string; perfil: Perfil; loja_id: string; ativo: boolean }> {
   const { data } = await adminSupabase()
     .from('usuarios_perfil')
@@ -218,13 +257,16 @@ export async function criarUsuario(data: {
   senha: string
   nome: string
   perfil: Perfil
+  /** Loja padrão. */
   loja_id: string
+  /** Lojas com acesso (ignorado para admin/diretor, que têm todas). */
+  lojas_acesso?: string[]
   modulos_permitidos: string[]
 }): Promise<ResultadoAcao<{ userId: string }>> {
   try {
     const gestor = await exigirGestorUsuarios()
     exigirAlcance(gestor, { perfil: data.perfil, loja_id: data.loja_id })
-    await validarPerfilLoja(data.perfil, data.loja_id)
+    const lojasAcesso = await validarLojasAcesso(data.perfil, data.loja_id, data.lojas_acesso)
     const supabase = adminSupabase()
 
     const { data: authData, error: authError } = await supabase.auth.admin.createUser({
@@ -247,6 +289,14 @@ export async function criarUsuario(data: {
     if (perfilError) {
       await supabase.auth.admin.deleteUser(authData.user.id)
       throw new Error(`Erro ao salvar perfil (auth revertido): ${perfilError.message} | code: ${perfilError.code} | details: ${perfilError.details}`)
+    }
+
+    try {
+      await sincronizarLojasAcesso(authData.user.id, lojasAcesso)
+    } catch (err) {
+      // Desfaz tudo (apagar o usuário do Auth apaga o perfil em cascata).
+      await supabase.auth.admin.deleteUser(authData.user.id)
+      throw err
     }
 
     revalidatePath('/admin/usuarios')
@@ -272,7 +322,16 @@ export async function resetarSenha(userId: string): Promise<ResultadoAcao<{ nova
 
 export async function atualizarUsuario(
   id: string,
-  data: { nome: string; perfil: Perfil; loja_id: string; ativo: boolean; modulos_permitidos: string[] }
+  data: {
+    nome: string
+    perfil: Perfil
+    /** Loja padrão. */
+    loja_id: string
+    /** Lojas com acesso. Omitido = não mexe nas lojas (ex.: ativar/desativar pela lista). */
+    lojas_acesso?: string[]
+    ativo: boolean
+    modulos_permitidos: string[]
+  }
 ): Promise<ResultadoAcao> {
   try {
     const gestor = await exigirGestorUsuarios()
@@ -282,7 +341,13 @@ export async function atualizarUsuario(
     if (id === gestor.id && (data.perfil !== alvo.perfil || data.ativo !== alvo.ativo)) {
       throw new Error('Você não pode alterar o próprio perfil nem se desativar.')
     }
-    await validarPerfilLoja(data.perfil, data.loja_id)
+    // Sem lista: mantém as lojas atuais, mas a loja padrão precisa continuar
+    // entre elas (o gatilho da 024 garante isso no banco).
+    const lojasAcesso =
+      data.lojas_acesso !== undefined || ehPerfilTodasLojas(data.perfil)
+        ? await validarLojasAcesso(data.perfil, data.loja_id, data.lojas_acesso)
+        : null
+    if (!lojasAcesso) await validarPerfilLoja(data.perfil, data.loja_id)
 
     // Bloqueio no Auth ANTES de gravar `ativo`: se o Auth falhar, nada muda.
     // Desativar sempre reaplica o ban (idempotente — cobre quem foi desativado
@@ -314,6 +379,9 @@ export async function atualizarUsuario(
           (falhaReversao ? ` Atenção: o bloqueio no Auth não pôde ser desfeito (${falhaReversao}) — salve de novo.` : ' Nada foi alterado.')
       )
     }
+    // Lojas com acesso: se o usuário perder acesso à loja que está no cookie
+    // dele, resolverLojaAtiva o põe na loja padrão no próximo carregamento.
+    if (lojasAcesso) await sincronizarLojasAcesso(id, lojasAcesso)
     revalidatePath('/admin/usuarios')
     return { ok: true }
   } catch (err) {
@@ -499,12 +567,9 @@ async function exigirAcessoLead(leadId: string): Promise<{ loja_id: string; perf
 // Responsável de um lead tem de ser usuário da mesma loja do lead — mesma
 // lista que as telas oferecem (usuarios_perfil.eq('loja_id'), sem filtrar ativo).
 async function exigirResponsavelDaLoja(responsavelId: string, lojaId: string) {
-  const { data: responsavel } = await adminSupabase()
-    .from('usuarios_perfil')
-    .select('loja_id')
-    .eq('id', responsavelId)
-    .maybeSingle()
-  if (!responsavel || responsavel.loja_id !== lojaId) {
+  // Loja padrão OU marcada em usuarios_lojas (gerente das duas lojas pode ser
+  // responsável nas duas). Usuário inativo não pode.
+  if (!(await usuarioTrabalhaNaLoja(responsavelId, lojaId))) {
     throw new Error('O responsável escolhido não é um usuário desta loja.')
   }
 }

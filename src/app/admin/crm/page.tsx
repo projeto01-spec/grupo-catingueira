@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { adminSupabase, createServerSupabase } from '@/lib/supabase-server'
+import { listarUsuariosDaLoja } from '@/lib/acesso'
 import { obterLojaAtivaId } from '@/lib/loja-ativa'
 import type { Lead, UsuarioPerfil, Loja } from '@/types'
 import CrmClient from './CrmClient'
@@ -36,25 +37,19 @@ export default async function CrmPage({
   // Service role + filtro explícito da loja ativa: a RLS de leads usa
   // perfil.loja_id e mostrava a lista vazia para admin/diretor com o seletor
   // na outra loja.
-  const [{ data: leadsData }, { data: vendedoresData }] = await Promise.all([
+  const [{ data: leadsData }, vendedoresLoja] = await Promise.all([
     adminSupabase()
       .from('leads')
       .select('*, veiculo:veiculos(marca, modelo, ano)')
       .eq('loja_id', lojaId)
       .order('created_at', { ascending: false }),
-    // Service role: a RLS de usuarios_perfil só libera o próprio perfil
-    // (migration 023). Filtro pela loja ativa, já resolvida no servidor.
-    adminSupabase()
-      .from('usuarios_perfil')
-      .select('id, nome')
-      .eq('loja_id', lojaId)
-      .eq('ativo', true)
-      // Sócio não é vendedor — não deve aparecer como opção de responsável pelo lead
-      .neq('perfil', 'socio'),
+    // Usuários da loja ativa (padrão ou com acesso marcado). Sócio não é
+    // vendedor — não aparece como opção de responsável pelo lead.
+    listarUsuariosDaLoja(lojaId, { semSocio: true }),
   ])
 
   const leads = (leadsData ?? []) as Lead[]
-  const vendedores = (vendedoresData ?? []) as { id: string; nome: string }[]
+  const vendedores = vendedoresLoja.map(({ id, nome }) => ({ id, nome }))
 
   return (
     <CrmClient

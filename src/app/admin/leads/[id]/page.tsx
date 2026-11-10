@@ -1,5 +1,6 @@
 import { notFound, redirect } from 'next/navigation'
 import { adminSupabase, createServerSupabase } from '@/lib/supabase-server'
+import { listarUsuariosDaLoja } from '@/lib/acesso'
 import { conferirLojaDoRegistro, obterLojaAtivaId } from '@/lib/loja-ativa'
 import AvisoOutraLoja from '@/components/admin/AvisoOutraLoja'
 import type { Lead, LeadInteracao, MensagemPadrao, UsuarioPerfil } from '@/types'
@@ -49,7 +50,7 @@ export default async function LeadDetailPage({
   // leads/mensagens usa perfil.loja_id e esconderia os dados da loja do
   // seletor para admin/diretor; a de usuarios_perfil só libera o próprio
   // perfil (migration 023).
-  const [{ data: leadData }, { data: interacoesData }, { data: vendedoresData }, { data: templatesData }] =
+  const [{ data: leadData }, { data: interacoesData }, vendedoresLoja, { data: templatesData }] =
     await Promise.all([
       admin
         .from('leads')
@@ -63,11 +64,8 @@ export default async function LeadDetailPage({
         .eq('lead_id', id)
         .eq('loja_id', lojaId)
         .order('created_at', { ascending: false }),
-      admin
-        .from('usuarios_perfil')
-        .select('id, nome')
-        .eq('loja_id', lojaId)
-        .eq('ativo', true),
+      // Usuários da loja ativa (padrão ou com acesso marcado em usuarios_lojas).
+      listarUsuariosDaLoja(lojaId),
       admin
         .from('mensagens_padrao')
         .select('*')
@@ -79,12 +77,18 @@ export default async function LeadDetailPage({
 
   const lead = leadData as Lead
   const interacoes = (interacoesData ?? []) as LeadInteracao[]
-  const vendedores = (vendedoresData ?? []) as { id: string; nome: string }[]
+  const vendedores = vendedoresLoja.map(({ id, nome }) => ({ id, nome }))
   const templates = (templatesData ?? []) as MensagemPadrao[]
 
-  const criadorNome = lead.criado_por
-    ? (vendedores.find(v => v.id === lead.criado_por)?.nome ?? null)
-    : null
+  // Quem criou pode ser de fora da lista (admin de outra loja padrão, usuário inativo).
+  let criadorNome: string | null = null
+  if (lead.criado_por) {
+    criadorNome = vendedores.find(v => v.id === lead.criado_por)?.nome ?? null
+    if (!criadorNome) {
+      const { data: criador } = await admin.from('usuarios_perfil').select('nome').eq('id', lead.criado_por).maybeSingle()
+      criadorNome = criador?.nome ?? null
+    }
+  }
 
   return (
     <div className="p-6 md:p-8 max-w-4xl">

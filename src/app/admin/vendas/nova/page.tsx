@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createServerSupabase, adminSupabase } from '@/lib/supabase-server'
 import { conferirLojaDoRegistro, obterLojaAtivaId } from '@/lib/loja-ativa'
+import { listarUsuariosDaLoja } from '@/lib/acesso'
 import AvisoOutraLoja from '@/components/admin/AvisoOutraLoja'
 import type { UsuarioPerfil, Veiculo, Venda, VendaPagamento } from '@/types'
 import NovaVendaClient from './NovaVendaClient'
@@ -77,7 +78,7 @@ export default async function NovaVendaPage({ searchParams }: Props) {
     }
   }
 
-  const [{ data: veiculosData }, { data: usuariosData }] = await Promise.all([
+  const [{ data: veiculosData }, usuariosLoja] = await Promise.all([
     admin
       .from('veiculos')
       .select('id,marca,modelo,versao,ano,cor,km,cambio,combustivel,preco,placa,fotos,status')
@@ -85,17 +86,13 @@ export default async function NovaVendaPage({ searchParams }: Props) {
       .eq('excluido', false)
       .in('status', ['disponivel', 'reservado'])
       .order('created_at', { ascending: false }),
-    admin
-      .from('usuarios_perfil')
-      .select('id,nome,perfil')
-      .eq('loja_id', lojaId)
-      .eq('ativo', true)
-      // Sócio não é vendedor — não deve aparecer como opção de "vendedor responsável"
-      .neq('perfil', 'socio'),
+    // Usuários da loja ativa (padrão ou com acesso marcado). Sócio não é
+    // vendedor — não aparece como opção de "vendedor responsável".
+    listarUsuariosDaLoja(lojaId, { semSocio: true }),
   ])
 
   const veiculos = (veiculosData ?? []) as Veiculo[]
-  const usuarios = (usuariosData ?? []) as UsuarioPerfil[]
+  const usuarios = usuariosLoja as unknown as UsuarioPerfil[]
 
   return (
     <NovaVendaClient

@@ -51,6 +51,7 @@ type UsuarioComEmail = UsuarioPerfil & {
   loja: Loja | null
   email: string
   modulos_permitidos: string[]  // explícito: normalizado para [] em page.tsx antes de serializar
+  lojas_acesso: string[]        // sempre inclui a loja padrão (page.tsx)
 }
 
 interface Props {
@@ -145,12 +146,126 @@ function ModulosCheckbox({
   )
 }
 
+// ── CampoLojas ────────────────────────────────────────────────────────────────
+// "Lojas com acesso" (checkboxes, mesmo visual dos módulos) + "Loja padrão"
+// (só entre as marcadas). Admin/diretor: acesso a todas, sem checkboxes.
+// Validado de novo no servidor (validarLojasAcesso em actions.ts).
+
+function ehPerfilTodasLojas(p: Perfil) {
+  return p === 'admin' || p === 'diretor'
+}
+
+function CampoLojas({
+  perfilAlvo,
+  lojas,
+  lojasPadraoPermitidas,
+  marcadas,
+  onMarcadas,
+  padrao,
+  onPadrao,
+}: {
+  perfilAlvo: Perfil
+  lojas: Loja[]
+  /** Lojas que o gestor pode usar como loja padrão (diretor: só a dele). */
+  lojasPadraoPermitidas: Loja[]
+  marcadas: string[]
+  onMarcadas: (v: string[]) => void
+  padrao: string
+  onPadrao: (v: string) => void
+}) {
+  const todas = ehPerfilTodasLojas(perfilAlvo)
+  const opcoes = perfilAlvo === 'socio' ? lojas.filter(ehLojaFelizardo) : lojas
+  const idsPadraoPermitidos = new Set(lojasPadraoPermitidas.map(l => l.id))
+  const opcoesPadrao = opcoes.filter(l => idsPadraoPermitidos.has(l.id) && (todas || marcadas.includes(l.id)))
+
+  function toggle(lojaId: string) {
+    const novas = marcadas.includes(lojaId) ? marcadas.filter(id => id !== lojaId) : [...marcadas, lojaId]
+    onMarcadas(novas)
+    // Loja padrão desmarcada → passa para a primeira marcada que puder ser padrão.
+    if (!novas.includes(padrao)) {
+      onPadrao(opcoes.find(l => novas.includes(l.id) && idsPadraoPermitidos.has(l.id))?.id ?? '')
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <label className={labelCls}>Lojas com acesso</label>
+        {todas ? (
+          <p className="text-sm text-[#374151] bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl px-3 py-2">
+            Acesso a todas as lojas
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {opcoes.map(l => {
+              const ativo = marcadas.includes(l.id)
+              return (
+                <button
+                  key={l.id}
+                  type="button"
+                  onClick={() => toggle(l.id)}
+                  aria-pressed={ativo}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all cursor-pointer ${
+                    ativo
+                      ? 'bg-[#FEF9C3] border-[#F5C842] text-[#92400E]'
+                      : 'bg-white border-[#E5E7EB] text-[#6B7280] hover:border-[#D1D5DB] hover:text-[#374151]'
+                  }`}
+                >
+                  <span
+                    className={`w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 transition-colors ${
+                      ativo ? 'bg-[#F5C842] border-[#F59E0B]' : 'border-[#D1D5DB] bg-white'
+                    }`}
+                  >
+                    {ativo && (
+                      <svg className="w-2.5 h-2.5 text-[#92400E]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </span>
+                  {l.nome}
+                </button>
+              )
+            })}
+          </div>
+        )}
+        {perfilAlvo === 'socio' && (
+          <p className="text-[#9CA3AF] text-xs mt-1">Sócio só pode ser vinculado à loja Felizardo.</p>
+        )}
+      </div>
+      <div>
+        <label className={labelCls}>Loja padrão</label>
+        <select value={padrao} onChange={e => onPadrao(e.target.value)} className={selectCls}>
+          {opcoesPadrao.length === 0 && <option value="">Marque uma loja acima</option>}
+          {opcoesPadrao.map(l => (
+            <option key={l.id} value={l.id}>{l.nome}</option>
+          ))}
+        </select>
+        <p className="text-[#9CA3AF] text-xs mt-1">Loja que abre ao entrar no painel.</p>
+      </div>
+    </div>
+  )
+}
+
+/** Erro de validação das lojas no navegador (o servidor confere de novo). */
+function erroLojas(perfilAlvo: Perfil, marcadas: string[], padrao: string): string | null {
+  if (!padrao) return 'Escolha a loja padrão.'
+  if (ehPerfilTodasLojas(perfilAlvo)) return null
+  if (marcadas.length === 0) return 'Marque pelo menos uma loja com acesso.'
+  if (!marcadas.includes(padrao)) return 'A loja padrão precisa estar entre as lojas marcadas.'
+  return null
+}
+
 // ── Componente principal ──────────────────────────────────────────────────────
 
 export default function UsuariosClient({ perfil, usuarios, lojas }: Props) {
   const router = useRouter()
   // Ninguém atribui perfil acima do próprio (validado de novo no servidor).
   const perfisPermitidos = perfil.perfil === 'admin' ? PERFIS : PERFIS.filter(p => p !== 'admin')
+  // Diretor só gerencia usuários cuja loja padrão é a dele (exigirAlcance em
+  // actions.ts); pode dar acesso a qualquer loja. Admin: qualquer loja.
+  const lojasPadraoPermitidas = perfil.perfil === 'admin' ? lojas : lojas.filter(l => l.id === perfil.loja_id)
+  const lojaPadraoInicial = lojasPadraoPermitidas[0]?.id ?? lojas[0]?.id ?? ''
+  const nomeLoja = (id: string) => lojas.find(l => l.id === id)?.nome ?? '—'
 
   const [modal,           setModal]           = useState<'criar' | 'editar' | null>(null)
   const [editandoUsuario, setEditandoUsuario] = useState<UsuarioComEmail | null>(null)
@@ -162,7 +277,8 @@ export default function UsuariosClient({ perfil, usuarios, lojas }: Props) {
   const [emailNovo,    setEmailNovo]    = useState('')
   const [senhaNova,    setSenhaNova]    = useState('')
   const [perfilNovo,   setPerfilNovo]   = useState<Perfil>('vendedor')
-  const [lojaIdNova,   setLojaIdNova]   = useState(lojas[0]?.id ?? '')
+  const [lojaIdNova,   setLojaIdNova]   = useState(lojaPadraoInicial)
+  const [lojasNovas,   setLojasNovas]   = useState<string[]>(lojaPadraoInicial ? [lojaPadraoInicial] : [])
   const [modulosNovos, setModulosNovos] = useState<string[]>(MODULOS_POR_PERFIL['vendedor'])
   const [criandoLoad,  setCriandoLoad]  = useState(false)
   const [criandoErro,  setCriandoErro]  = useState<string | null>(null)
@@ -171,6 +287,7 @@ export default function UsuariosClient({ perfil, usuarios, lojas }: Props) {
   const [nomeEdit,     setNomeEdit]     = useState('')
   const [perfilEdit,   setPerfilEdit]   = useState<Perfil>('vendedor')
   const [lojaIdEdit,   setLojaIdEdit]   = useState('')
+  const [lojasEdit,    setLojasEdit]    = useState<string[]>([])
   const [ativoEdit,    setAtivoEdit]    = useState(true)
   const [modulosEdit,  setModulosEdit]  = useState<string[]>([])
   const [editandoLoad, setEditandoLoad] = useState(false)
@@ -186,7 +303,8 @@ export default function UsuariosClient({ perfil, usuarios, lojas }: Props) {
 
   function abrirCriar() {
     setNomeNovo(''); setEmailNovo(''); setSenhaNova(gerarSenha())
-    setPerfilNovo('vendedor'); setLojaIdNova(lojas[0]?.id ?? '')
+    setPerfilNovo('vendedor'); setLojaIdNova(lojaPadraoInicial)
+    setLojasNovas(lojaPadraoInicial ? [lojaPadraoInicial] : [])
     setModulosNovos(MODULOS_POR_PERFIL['vendedor'])
     setCriandoErro(null); setModal('criar')
   }
@@ -196,6 +314,7 @@ export default function UsuariosClient({ perfil, usuarios, lojas }: Props) {
     setEditandoUsuario(u)
     setNomeEdit(u.nome); setPerfilEdit(u.perfil)
     setLojaIdEdit(u.loja_id); setAtivoEdit(u.ativo)
+    setLojasEdit(u.lojas_acesso?.length ? u.lojas_acesso : [u.loja_id])
     setModulosEdit(u.modulos_permitidos ?? MODULOS_POR_PERFIL[u.perfil])
     setEditandoErro(null); setModal('editar')
   }
@@ -207,7 +326,7 @@ export default function UsuariosClient({ perfil, usuarios, lojas }: Props) {
     setModulosNovos(MODULOS_POR_PERFIL[p])
     if (p === 'socio') {
       const felizardo = lojas.find(ehLojaFelizardo)
-      if (felizardo) setLojaIdNova(felizardo.id)
+      if (felizardo) { setLojaIdNova(felizardo.id); setLojasNovas([felizardo.id]) }
     }
   }
 
@@ -216,18 +335,22 @@ export default function UsuariosClient({ perfil, usuarios, lojas }: Props) {
     setModulosEdit(MODULOS_POR_PERFIL[p])
     if (p === 'socio') {
       const felizardo = lojas.find(ehLojaFelizardo)
-      if (felizardo) setLojaIdEdit(felizardo.id)
+      if (felizardo) { setLojaIdEdit(felizardo.id); setLojasEdit([felizardo.id]) }
     }
   }
 
   async function handleCriar(e: React.FormEvent) {
     e.preventDefault()
     if (!senhaNova.trim()) { setCriandoErro('Gere ou digite uma senha'); return }
+    const erroL = erroLojas(perfilNovo, lojasNovas, lojaIdNova)
+    if (erroL) { setCriandoErro(erroL); return }
     setCriandoLoad(true); setCriandoErro(null)
     try {
       const r = await criarUsuario({
         email: emailNovo, senha: senhaNova, nome: nomeNovo,
-        perfil: perfilNovo, loja_id: lojaIdNova, modulos_permitidos: modulosNovos,
+        perfil: perfilNovo, loja_id: lojaIdNova,
+        lojas_acesso: ehPerfilTodasLojas(perfilNovo) ? undefined : lojasNovas,
+        modulos_permitidos: modulosNovos,
       })
       if (!r.ok) { setCriandoErro(r.erro); return }
       setCredenciais({ email: emailNovo, senha: senhaNova })
@@ -242,11 +365,15 @@ export default function UsuariosClient({ perfil, usuarios, lojas }: Props) {
   async function handleEditar(e: React.FormEvent) {
     e.preventDefault()
     if (!editandoUsuario) return
+    const erroL = erroLojas(perfilEdit, lojasEdit, lojaIdEdit)
+    if (erroL) { setEditandoErro(erroL); return }
     setEditandoLoad(true); setEditandoErro(null)
     try {
       const r = await atualizarUsuario(editandoUsuario.id, {
         nome: nomeEdit, perfil: perfilEdit,
-        loja_id: lojaIdEdit, ativo: ativoEdit, modulos_permitidos: modulosEdit,
+        loja_id: lojaIdEdit,
+        lojas_acesso: ehPerfilTodasLojas(perfilEdit) ? undefined : lojasEdit,
+        ativo: ativoEdit, modulos_permitidos: modulosEdit,
       })
       if (!r.ok) { setEditandoErro(r.erro); return }
       fecharModal(); router.refresh()
@@ -377,7 +504,7 @@ export default function UsuariosClient({ perfil, usuarios, lojas }: Props) {
                     { label: 'Usuário' },
                     { label: 'E-mail', cls: 'hidden sm:table-cell' },
                     { label: 'Perfil' },
-                    { label: 'Loja' },
+                    { label: 'Lojas' },
                     { label: 'Módulos', cls: 'hidden md:table-cell' },
                     { label: 'Status' },
                     { label: 'Criado', cls: 'hidden md:table-cell' },
@@ -421,8 +548,23 @@ export default function UsuariosClient({ perfil, usuarios, lojas }: Props) {
                       </span>
                     </td>
 
-                    {/* Loja */}
-                    <td className="px-4 py-3 text-[#6B7280] whitespace-nowrap text-sm">{u.loja?.nome ?? '—'}</td>
+                    {/* Lojas com acesso (★ = loja padrão) */}
+                    <td className="px-4 py-3 text-[#6B7280] text-sm">
+                      {ehPerfilTodasLojas(u.perfil) ? (
+                        <span className="whitespace-nowrap">Todas as lojas</span>
+                      ) : (
+                        <div className="flex flex-col gap-0.5">
+                          {(u.lojas_acesso?.length ? u.lojas_acesso : [u.loja_id]).map(id => (
+                            <span key={id} className="whitespace-nowrap">
+                              {nomeLoja(id)}
+                              {id === u.loja_id && (u.lojas_acesso?.length ?? 0) > 1 && (
+                                <span className="ml-1 text-[#F59E0B]" title="Loja padrão">★</span>
+                              )}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
 
                     {/* Módulos */}
                     <td className="px-4 py-3 hidden md:table-cell">
@@ -586,18 +728,16 @@ export default function UsuariosClient({ perfil, usuarios, lojas }: Props) {
                 {perfisPermitidos.map(p => <option key={p} value={p} className="capitalize">{p}</option>)}
               </select>
             </div>
-            <div>
-              <label className={labelCls}>Loja</label>
-              <select value={lojaIdNova} onChange={e => setLojaIdNova(e.target.value)} className={selectCls}>
-                {(perfilNovo === 'socio' ? lojas.filter(ehLojaFelizardo) : lojas).map(l => (
-                  <option key={l.id} value={l.id}>{l.nome}</option>
-                ))}
-              </select>
-              {perfilNovo === 'socio' && (
-                <p className="text-[#9CA3AF] text-xs mt-1">Sócio só pode ser vinculado à loja Felizardo.</p>
-              )}
-            </div>
           </div>
+          <CampoLojas
+            perfilAlvo={perfilNovo}
+            lojas={lojas}
+            lojasPadraoPermitidas={lojasPadraoPermitidas}
+            marcadas={lojasNovas}
+            onMarcadas={setLojasNovas}
+            padrao={lojaIdNova}
+            onPadrao={setLojaIdNova}
+          />
           <div>
             <label className={labelCls}>Módulos permitidos</label>
             <p className="text-[#9CA3AF] text-xs mb-2">Sugeridos pelo perfil — ajuste se necessário.</p>
@@ -659,18 +799,22 @@ export default function UsuariosClient({ perfil, usuarios, lojas }: Props) {
                       .map(p => <option key={p} value={p} className="capitalize">{p}</option>)}
                   </select>
                 </div>
-                <div>
-                  <label className={labelCls}>Loja</label>
-                  <select value={lojaIdEdit} onChange={e => setLojaIdEdit(e.target.value)} className={selectCls}>
-                    {(perfilEdit === 'socio' ? lojas.filter(ehLojaFelizardo) : lojas).map(l => (
-                      <option key={l.id} value={l.id}>{l.nome}</option>
-                    ))}
-                  </select>
-                  {perfilEdit === 'socio' && (
-                    <p className="text-[#9CA3AF] text-xs mt-1">Sócio só pode ser vinculado à loja Felizardo.</p>
-                  )}
-                </div>
               </div>
+              <CampoLojas
+                perfilAlvo={perfilEdit}
+                lojas={lojas}
+                lojasPadraoPermitidas={
+                  // Mantém a loja padrão atual visível mesmo fora do alcance do
+                  // gestor (o servidor recusa se não for permitido).
+                  lojasPadraoPermitidas.some(l => l.id === lojaIdEdit)
+                    ? lojasPadraoPermitidas
+                    : [...lojasPadraoPermitidas, ...lojas.filter(l => l.id === lojaIdEdit)]
+                }
+                marcadas={lojasEdit}
+                onMarcadas={setLojasEdit}
+                padrao={lojaIdEdit}
+                onPadrao={setLojaIdEdit}
+              />
               <div className="flex items-center gap-3 p-3 rounded-xl bg-[#F9FAFB] border border-[#E5E7EB]">
                 <input
                   type="checkbox"

@@ -162,7 +162,6 @@ export default function AdminSidebar({ perfil, loja, lojas }: AdminSidebarProps)
   const [mobileOpen,    setMobileOpen]    = useState(false)
   const [seletorAberto, setSeletorAberto] = useState(false)
 
-  const isAdminOrDiretor = perfil?.perfil === 'admin' || perfil?.perfil === 'diretor'
 
   async function sair() {
     const supabase = createClient()
@@ -218,7 +217,8 @@ export default function AdminSidebar({ perfil, loja, lojas }: AdminSidebarProps)
 
       {/* ── Seletor de loja ──────────────────────────────────────────────── */}
       <div className="px-4 pt-4">
-        {isAdminOrDiretor && lojas.length > 1 ? (
+        {/* Seletor para quem tem acesso a mais de uma loja (admin/diretor: todas; demais: lojas marcadas no cadastro). */}
+        {lojas.length > 1 ? (
           <div className="relative">
             <button
               onClick={() => setSeletorAberto(v => !v)}
