@@ -5,6 +5,7 @@ import { createServerSupabase, adminSupabase } from '@/lib/supabase-server'
 import { getLojaIdAtiva } from '@/lib/getLojaIdAtiva'
 import { formatarPreco, formatarKm } from '@/lib/utils'
 import { NOME_CANAL, pendenciasLojaOlx, pendenciasPublicacao } from '@/lib/publicacao'
+import { filtroOrIlike } from '@/lib/filtro-busca'
 import type { Veiculo, UsuarioPerfil } from '@/types'
 import MarcaVendidoButton from '@/components/admin/MarcaVendidoButton'
 import VeiculosBuscaClient from './VeiculosBuscaClient'
@@ -46,9 +47,10 @@ export default async function VeiculosAdminPage({
   if (params.rascunho) {
     query = query.eq('rascunho', true)
   }
-  if (params.q) {
-    const q = params.q.replace(/'/g, "''")
-    query = query.or(`marca.ilike.%${q}%,modelo.ilike.%${q}%,placa.ilike.%${q}%`)
+  // Texto livre dentro de .or(): vírgula/parênteses/% escapados (lib/filtro-busca).
+  const filtroBusca = filtroOrIlike(['marca', 'modelo', 'placa'], params.q)
+  if (filtroBusca) {
+    query = query.or(filtroBusca)
   }
 
   const [{ data }, { data: lojaData }] = await Promise.all([

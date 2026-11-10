@@ -3,7 +3,7 @@ import { getLoja } from '@/lib/getLoja'
 import HomeCatingueira from '@/components/home/HomeCatingueira'
 import HomeFelizardo from '@/components/home/HomeFelizardo'
 import { buildWaHref, formatWA } from '@/lib/whatsapp'
-import type { Veiculo } from '@/types'
+import { SELECT_VEICULO_PUBLICO, VIEW_VEICULOS_PUBLICOS, type VeiculoPublico } from '@/lib/veiculos-publicos'
 
 export async function generateMetadata() {
   const loja = await getLoja()
@@ -21,40 +21,35 @@ export default async function HomePage() {
   const waHref = buildWaHref(waNum, 'Olá! Vim pelo site e quero conhecer o estoque.')
   const waDisplay = formatWA(waNum)
 
-  const veiculoColunas = 'id, loja_id, marca, modelo, versao, ano, cor, km, combustivel, cambio, preco, valor_oferta, placa, chassi, renavam, tipo, portas, hodometro_venda, descricao, opcionais, status, destaque, fotos, data_aquisicao, created_at, excluido'
-
-  let destaques: Veiculo[] = []
+  // View pública: já filtra disponível / não-rascunho / não-excluído e só
+  // expõe colunas seguras (ver src/lib/veiculos-publicos.ts).
+  let destaques: VeiculoPublico[] = []
   if (loja) {
     const { data, error } = await supabase
-      .from('veiculos')
-      .select(veiculoColunas)
+      .from(VIEW_VEICULOS_PUBLICOS)
+      .select(SELECT_VEICULO_PUBLICO)
       .eq('loja_id', loja.id)
-      .eq('status', 'disponivel')
-      .eq('excluido', false)
-      .eq('rascunho', false)
       .eq('destaque', true)
+      .order('created_at', { ascending: false })
       .limit(9)
 
     if (error) {
       console.error('[HomePage] erro ao buscar veículos em destaque:', error)
     }
-    destaques = (data ?? []) as Veiculo[]
+    destaques = (data ?? []) as unknown as VeiculoPublico[]
 
     if (destaques.length === 0) {
       const { data: recentes, error: erroRecentes } = await supabase
-        .from('veiculos')
-        .select(veiculoColunas)
+        .from(VIEW_VEICULOS_PUBLICOS)
+        .select(SELECT_VEICULO_PUBLICO)
         .eq('loja_id', loja.id)
-        .eq('status', 'disponivel')
-        .eq('excluido', false)
-        .eq('rascunho', false)
         .order('created_at', { ascending: false })
         .limit(9)
 
       if (erroRecentes) {
         console.error('[HomePage] erro ao buscar veículos recentes (fallback de destaques):', erroRecentes)
       }
-      destaques = (recentes ?? []) as Veiculo[]
+      destaques = (recentes ?? []) as unknown as VeiculoPublico[]
     }
   }
 

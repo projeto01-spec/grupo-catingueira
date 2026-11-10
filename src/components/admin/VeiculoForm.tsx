@@ -1,25 +1,14 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import Image from 'next/image'
-import {
-  DndContext,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  closestCenter,
-  type DragEndEvent,
-} from '@dnd-kit/core'
-import { SortableContext, useSortable, arrayMove, rectSortingStrategy } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import { criarVeiculo, atualizarVeiculo, atualizarDadosVeiculo } from '@/app/actions'
+import { criarVeiculo, atualizarVeiculo, atualizarDadosVeiculo, descartarFotosNaoSalvas } from '@/app/actions'
 import { useAdmin } from '@/contexts/AdminContext'
 import VinculoCatalogoOlx from '@/components/admin/VinculoCatalogoOlx'
-import { enviarFotosVeiculo, textoProgresso, type ProgressoUpload, type ResultadoUpload } from '@/lib/upload-fotos'
+import GerenciadorFotos from '@/components/admin/GerenciadorFotos'
 import type { Veiculo } from '@/types'
 
 const CONDICAO_LISTA: { valor: 'novo' | 'seminovo' | 'usado'; label: string }[] = [
@@ -82,49 +71,6 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>
 
-function FotoItem({
-  foto,
-  index,
-  onRemover,
-}: {
-  foto: string
-  index: number
-  onRemover: () => void
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: foto })
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  }
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
-      className={`relative aspect-square rounded-lg overflow-hidden bg-[#F9FAFB] cursor-grab active:cursor-grabbing border-2 touch-none transition-opacity ${
-        isDragging ? 'opacity-40 border-[#F5C842]' : 'border-[#E5E7EB]'
-      } ${index === 0 ? 'ring-2 ring-offset-2 ring-offset-white ring-[#F5C842]' : ''}`}
-    >
-      <Image src={foto} alt={`Foto ${index + 1}`} fill className="object-cover" sizes="100px" />
-      {index === 0 && (
-        <span className="absolute bottom-0 left-0 right-0 bg-[#F5C842] text-[#111827] text-[10px] font-bold text-center py-0.5">
-          CAPA
-        </span>
-      )}
-      <button
-        type="button"
-        onClick={onRemover}
-        className="absolute top-1 right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center text-white text-[10px] opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity"
-      >
-        ×
-      </button>
-    </div>
-  )
-}
-
 const CAMPO_LABELS: Partial<Record<keyof FormData, string>> = {
   marca: 'Marca',
   modelo: 'Modelo',
@@ -151,7 +97,6 @@ interface VeiculoFormProps {
 
 export default function VeiculoForm({ veiculo, lojaId, hideFotos, fotos: fotosExterna, noRedirect }: VeiculoFormProps) {
   const router = useRouter()
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const { loja, perfil } = useAdmin()
   const isFelizardo = (loja?.dominio ?? '').toLowerCase().includes('felizardo')
   const isSocio = perfil?.perfil === 'socio'
@@ -159,15 +104,9 @@ export default function VeiculoForm({ veiculo, lojaId, hideFotos, fotos: fotosEx
   const [fotos, setFotos] = useState<string[]>(hideFotos ? (fotosExterna ?? veiculo?.fotos ?? []) : (veiculo?.fotos ?? []))
   const [opcionais, setOpcionais] = useState<string[]>(veiculo?.opcionais ?? [])
   const [uploading, setUploading] = useState(false)
-  const [progresso, setProgresso] = useState<ProgressoUpload | null>(null)
-  const [errosUpload, setErrosUpload] = useState<ResultadoUpload['erros']>([])
   const [salvando, setSalvando] = useState(false)
   const [salvoOk, setSalvoOk] = useState(false)
   const [erro, setErro] = useState('')
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
-  )
 
   const {
     register,
@@ -209,35 +148,16 @@ export default function VeiculoForm({ veiculo, lojaId, hideFotos, fotos: fotosEx
 
   const proprietarioTipoAtual = watch('proprietario_tipo')
 
-  // Mesmo fluxo da aba Fotos (lib/upload-fotos): reduz no aparelho, envia uma
-  // por vez com progresso e mostra o erro real de cada foto que falhar.
-  async function uploadFotos(files: File[]) {
-    if (files.length === 0) return
-    setUploading(true)
-    setErrosUpload([])
-    try {
-      const { urls, erros } = await enviarFotosVeiculo(lojaId, files, setProgresso)
-      setErrosUpload(erros)
-      setFotos(prev => [...prev, ...urls])
-    } finally {
-      setUploading(false)
-      setProgresso(null)
+  // Fotos ficam só no estado até "Salvar". Remover uma foto ainda não salva
+  // apaga o arquivo que já subiu para o Storage (descartarFotosNaoSalvas só
+  // apaga se nenhum veículo usa a URL). Em edição com fotos (veiculo
+  // existente), a remoção vale ao salvar o formulário.
+  async function removerFoto(url: string) {
+    if (!veiculo) {
+      const res = await descartarFotosNaoSalvas(lojaId, [url])
+      if (!res.ok) throw new Error(res.erro)
     }
-  }
-
-  function removerFoto(index: number) {
-    setFotos(prev => prev.filter((_, i) => i !== index))
-  }
-
-  function onFotoDragEnd(e: DragEndEvent) {
-    const { active, over } = e
-    if (!over || active.id === over.id) return
-    setFotos(prev => {
-      const fromIndex = prev.indexOf(active.id as string)
-      const toIndex = prev.indexOf(over.id as string)
-      if (fromIndex === -1 || toIndex === -1) return prev
-      return arrayMove(prev, fromIndex, toIndex)
-    })
+    setFotos(prev => prev.filter(f => f !== url))
   }
 
   function toggleOpcional(op: string) {
@@ -338,58 +258,15 @@ export default function VeiculoForm({ veiculo, lojaId, hideFotos, fotos: fotosEx
       {/* Fotos */}
       {!hideFotos && <div className="bg-white border border-[#E5E7EB] rounded-xl p-5 shadow-sm">
         <h2 className="text-[#111827] font-bold text-sm uppercase tracking-wider mb-4">Fotos</h2>
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onFotoDragEnd}>
-          <SortableContext items={fotos} strategy={rectSortingStrategy}>
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 mb-4">
-              {fotos.map((foto, i) => (
-                <FotoItem key={foto} foto={foto} index={i} onRemover={() => removerFoto(i)} />
-              ))}
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                className="aspect-square rounded-lg border-2 border-dashed border-[#E5E7EB] hover:border-[#F5C842] bg-[#F9FAFB] flex flex-col items-center justify-center gap-1 transition-colors disabled:opacity-50"
-              >
-                {uploading ? (
-                  <span className="text-[#6B7280] text-[10px] leading-tight text-center px-1">
-                    {textoProgresso(progresso) || 'Enviando...'}
-                  </span>
-                ) : (
-                  <>
-                    <svg className="w-6 h-6 text-[#D1D5DB]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 4v16m8-8H4" />
-                    </svg>
-                    <span className="text-[#9CA3AF] text-[10px]">Adicionar</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </SortableContext>
-        </DndContext>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          className="hidden"
-          onChange={e => {
-            // Zerar o value permite reescolher o mesmo arquivo depois de um erro.
-            const arquivos = Array.from(e.target.files ?? [])
-            e.target.value = ''
-            void uploadFotos(arquivos)
-          }}
+        <GerenciadorFotos
+          lojaId={lojaId}
+          fotos={fotos}
+          onAdicionadas={urls => setFotos(prev => [...prev, ...urls])}
+          onRemover={removerFoto}
+          onReordenar={setFotos}
+          desabilitado={salvando}
+          onEnviandoChange={setUploading}
         />
-        {errosUpload.length > 0 && (
-          <div role="alert" className="mb-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-            <p className="font-semibold">
-              {errosUpload.length === 1 ? 'Uma foto não foi enviada:' : `${errosUpload.length} fotos não foram enviadas:`}
-            </p>
-            <ul className="list-disc pl-5 mt-1 space-y-0.5 text-xs">
-              {errosUpload.map((e, i) => <li key={i}><span className="font-medium">{e.arquivo}</span>: {e.mensagem}</li>)}
-            </ul>
-          </div>
-        )}
-        <p className="text-[#9CA3AF] text-xs">Arraste para reordenar. A primeira foto será a capa.</p>
       </div>}
 
       {/* Dados básicos */}

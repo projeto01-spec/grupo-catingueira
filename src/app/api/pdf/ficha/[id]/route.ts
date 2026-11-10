@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { adminSupabase } from '@/lib/supabase-server'
 import { obterPerfilDaSessao, temAcessoLoja } from '@/lib/acesso'
 import { getTenantLogoUrl } from '@/lib/tenant-assets'
+import { html } from '@/lib/escape-html'
 
 function formatarPreco(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -74,8 +75,8 @@ const COL_DIREITA = [
   'PERSONALIZAÇÃO',
 ]
 
-function checkboxItem(label: string, ativo: boolean): string {
-  return `<div style="font-size:13px;padding:5px 8px;min-height:24px">${ativo ? '(X)' : '( )'}&nbsp;${label}</div>`
+function checkboxItem(label: string, ativo: boolean) {
+  return html`<div style="font-size:13px;padding:5px 8px;min-height:24px">${ativo ? '(X)' : '( )'}&nbsp;${label}</div>`
 }
 
 export async function GET(
@@ -126,17 +127,18 @@ export async function GET(
   const enderecoLoja = [loja.endereco, loja.cidade, loja.estado].filter(Boolean).join(' — ')
 
   const logoUrl = getTenantLogoUrl(loja)
-  const logoHtml = `<img src="${logoUrl}" style="width:100%;height:auto;max-height:180px;object-fit:contain;object-position:center;display:block;margin:0 0 12px 0;" />`
+  const logoHtml = html`<img src="${logoUrl}" style="width:100%;height:auto;max-height:180px;object-fit:contain;object-position:center;display:block;margin:0 0 12px 0;" />`
 
   // ── Grid de dados ───────────────────────────────────────────────────────────
-  function celula(label: string, valor: string): string {
-    return `<td style="border:1px solid #000;width:50%;min-height:40px;vertical-align:top">
+  // Todo valor dinâmico passa pelo `html` (escape) — ver lib/escape-html.ts.
+  function celula(label: string, valor: string) {
+    return html`<td style="border:1px solid #000;width:50%;min-height:40px;vertical-align:top">
       <div style="font-weight:700;font-size:11px;padding:6px 8px 2px">${label}</div>
       <div style="font-size:14px;padding:2px 8px 8px">${valor}</div>
     </td>`
   }
 
-  const tabelaDados = `
+  const tabelaDados = html`
     <table style="width:100%;border-collapse:collapse;border:1px solid #000">
       <tr>
         ${celula('MODELO:', veiculo.versao ?? '—')}
@@ -159,13 +161,11 @@ export async function GET(
   // ── Opcionais ───────────────────────────────────────────────────────────────
   const colEsquerdaHtml = COL_ESQUERDA
     .map(item => checkboxItem(item, isAtivo(opcionaisVeiculo, veiculo.cambio, item)))
-    .join('')
 
   const colDireitaHtml = COL_DIREITA
     .map(item => checkboxItem(item, isAtivo(opcionaisVeiculo, veiculo.cambio, item)))
-    .join('')
 
-  const html = `<!DOCTYPE html>
+  const pagina = html`<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8"/>
@@ -320,9 +320,9 @@ body {
     <div class="sep" style="margin-top:14px"></div>
     <div class="sep2"></div>
     ${temOferta
-      ? `<div class="preco-de">DE ${formatarPreco(veiculo.preco)}</div>
+      ? html`<div class="preco-de">DE ${formatarPreco(veiculo.preco)}</div>
          <div class="preco-por">POR ${formatarPreco(veiculo.valor_oferta)}</div>`
-      : `<div class="preco">${formatarPreco(veiculo.preco)}</div>`
+      : html`<div class="preco">${formatarPreco(veiculo.preco)}</div>`
     }
     <div class="motor-linha">
       <div>
@@ -352,7 +352,7 @@ body {
 </body>
 </html>`
 
-  return new NextResponse(html, {
+  return new NextResponse(pagina.toString(), {
     headers: { 'Content-Type': 'text/html; charset=utf-8' },
   })
 }

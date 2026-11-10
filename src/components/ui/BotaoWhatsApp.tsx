@@ -5,7 +5,9 @@ import type { Veiculo } from '@/types'
 
 interface BotaoWhatsAppProps {
   whatsapp: string
-  veiculo?: Veiculo
+  // Só o necessário para a mensagem — componente client: tudo que vier em
+  // props vai serializado para o navegador.
+  veiculo?: Pick<Veiculo, 'marca' | 'modelo' | 'ano'>
   texto?: string
   tamanho?: 'sm' | 'md' | 'lg'
   className?: string

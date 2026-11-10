@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { createServerSupabase } from '@/lib/supabase-server'
+import { adminSupabase, createServerSupabase } from '@/lib/supabase-server'
 import { getLojaIdAtiva } from '@/lib/getLojaIdAtiva'
 import type { Lead, UsuarioPerfil, Loja } from '@/types'
 import CrmClient from './CrmClient'
@@ -39,10 +39,13 @@ export default async function CrmPage({
       .select('*, veiculo:veiculos(marca, modelo, ano)')
       .eq('loja_id', lojaId)
       .order('created_at', { ascending: false }),
-    supabase
+    // Service role: a RLS de usuarios_perfil só libera o próprio perfil
+    // (migration 023). Filtro pela loja ativa, já resolvida no servidor.
+    adminSupabase()
       .from('usuarios_perfil')
       .select('id, nome')
       .eq('loja_id', lojaId)
+      .eq('ativo', true)
       // Sócio não é vendedor — não deve aparecer como opção de responsável pelo lead
       .neq('perfil', 'socio'),
   ])

@@ -8,6 +8,9 @@ import type { Anexo, EntidadeAnexo } from '@/types'
 
 export type AnexoComUrl = Anexo & { urlAssinada: string | null }
 
+const TIPOS_ANEXO = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp']
+const TAMANHO_MAXIMO_ANEXO = 20 * 1024 * 1024
+
 interface Props {
   entidadeTipo: EntidadeAnexo
   entidadeId: string
@@ -27,12 +30,16 @@ export default function AnexosClient({ entidadeTipo, entidadeId, anexos: anexosI
     const supabase = createClient()
 
     for (const file of Array.from(files)) {
-      const tipoValido = file.type === 'application/pdf' || file.type.startsWith('image/')
-      if (!tipoValido) {
-        setErro('Apenas PDF ou imagens são permitidos.')
+      // Mesmos tipos e limite do bucket veiculos-documentos (migration 023).
+      if (!TIPOS_ANEXO.includes(file.type)) {
+        setErro(`${file.name}: envie PDF, JPG, PNG ou WEBP (fotos HEIC do iPhone: use "Mais Compatível" na câmera).`)
         continue
       }
-      const ext = file.name.split('.').pop()
+      if (file.size > TAMANHO_MAXIMO_ANEXO) {
+        setErro(`${file.name}: arquivo maior que 20 MB.`)
+        continue
+      }
+      const ext = (file.name.split('.').pop() ?? '').replace(/[^a-z0-9]/gi, '').slice(0, 5) || 'bin'
       const path = `${entidadeTipo}/${entidadeId}/${Date.now()}-${Math.random().toString(36).substring(2)}.${ext}`
       const { error: uploadError } = await supabase.storage
         .from('veiculos-documentos')
@@ -82,7 +89,7 @@ export default function AnexosClient({ entidadeTipo, entidadeId, anexos: anexosI
           {enviando ? 'Enviando...' : 'Enviar arquivo'}
           <input
             type="file"
-            accept="application/pdf,image/*"
+            accept="application/pdf,image/jpeg,image/png,image/webp"
             multiple
             className="hidden"
             disabled={enviando}

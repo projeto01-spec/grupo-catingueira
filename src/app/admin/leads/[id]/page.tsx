@@ -1,5 +1,5 @@
 import { notFound, redirect } from 'next/navigation'
-import { createServerSupabase } from '@/lib/supabase-server'
+import { adminSupabase, createServerSupabase } from '@/lib/supabase-server'
 import { getLojaIdAtiva } from '@/lib/getLojaIdAtiva'
 import type { Lead, LeadInteracao, MensagemPadrao, UsuarioPerfil } from '@/types'
 import LeadDetailClient from './LeadDetailClient'
@@ -26,7 +26,12 @@ export default async function LeadDetailPage({
   const perfil = perfilData as UsuarioPerfil
 
   const lojaId = await getLojaIdAtiva(perfil)
+  const admin = adminSupabase()
 
+  // Nomes de outros usuários (autor da interação, lista de responsáveis) vêm
+  // pela service role: a RLS de usuarios_perfil só deixa cada um ler o
+  // próprio perfil (migration 023). O lead em si continua pela RLS e, se não
+  // for da loja ativa, a página dá 404 antes de usar qualquer dado abaixo.
   const [{ data: leadData }, { data: interacoesData }, { data: vendedoresData }, { data: templatesData }] =
     await Promise.all([
       supabase
@@ -35,15 +40,17 @@ export default async function LeadDetailPage({
         .eq('id', id)
         .eq('loja_id', lojaId)
         .single(),
-      supabase
+      admin
         .from('lead_interacoes')
         .select('*, usuario:usuarios_perfil(nome)')
         .eq('lead_id', id)
+        .eq('loja_id', lojaId)
         .order('created_at', { ascending: false }),
-      supabase
+      admin
         .from('usuarios_perfil')
         .select('id, nome')
-        .eq('loja_id', lojaId),
+        .eq('loja_id', lojaId)
+        .eq('ativo', true),
       supabase
         .from('mensagens_padrao')
         .select('*')

@@ -5,11 +5,12 @@ import AnimatedSection from '@/components/ui/AnimatedSection'
 import WaIcon from '@/components/ui/WaIcon'
 import LandingImage from '@/components/ui/LandingImage'
 import { getHeroImage, getSecaoImage, getGaleriaImages } from '@/lib/landing-images'
-import type { Loja, Veiculo } from '@/types'
+import type { Loja } from '@/types'
+import type { VeiculoPublico } from '@/lib/veiculos-publicos'
 
 interface Props {
   loja: Loja
-  destaques: Veiculo[]
+  destaques: VeiculoPublico[]
   waHref: string
   waDisplay: string
   sobreTexto: string

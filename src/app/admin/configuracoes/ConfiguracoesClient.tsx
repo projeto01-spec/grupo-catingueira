@@ -15,6 +15,7 @@ import {
 import { SortableContext, useSortable, arrayMove, rectSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { createClient } from '@/lib/supabase'
+import { enviarImagensConfiguracao } from '@/lib/upload-fotos'
 import LandingImage from '@/components/ui/LandingImage'
 import { updateLojaSettings } from '@/app/actions'
 import { useAdmin } from '@/contexts/AdminContext'
@@ -56,6 +57,16 @@ function formatarCep(valor: string) {
 const inputClass =
   'w-full bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl px-3.5 py-2.5 text-[#111827] text-sm focus:outline-none focus:ring-2 focus:ring-[#F5C842] focus:border-[#F5C842] transition-all placeholder-[#D1D5DB]'
 const labelClass = 'block text-[#6B7280] text-xs font-semibold uppercase tracking-wider mb-1.5'
+
+// Favicon: tipos aceitos pelo bucket veiculos-fotos (migration 023), por extensão.
+const TIPOS_FAVICON: Record<string, string> = {
+  png: 'image/png',
+  ico: 'image/x-icon',
+  webp: 'image/webp',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+}
+const TAMANHO_MAXIMO_FAVICON = 10 * 1024 * 1024
 const errorClass = 'text-red-600 text-xs mt-1'
 
 function ImagemSlot({
@@ -64,12 +75,14 @@ function ImagemSlot({
   onUpload,
   onRemover,
   uploading,
+  accept = 'image/*',
 }: {
   label: string
   url: string
   onUpload: (file: File) => void
   onRemover: () => void
   uploading: boolean
+  accept?: string
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const temImagem = !!url
@@ -109,7 +122,7 @@ function ImagemSlot({
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept={accept}
           className="hidden"
           onChange={e => {
             const file = e.target.files?.[0]
@@ -214,48 +227,62 @@ function ConfiguracoesForm({ loja }: { loja: Loja }) {
     },
   })
 
+  // Favicon sobe como está (precisa manter transparência/PNG). As imagens da
+  // home (hero/seções/galeria) passam pela mesma compressão das fotos de
+  // veículo (lib/upload-fotos) — antes subiam cruas, com vários MB.
   async function uploadImagem(chave: string, file: File, aplicar: (url: string) => void) {
     setUploadingChave(chave)
     setErro('')
-    const supabase = createClient()
-    const ext = file.name.split('.').pop()
-    const nome = `configuracoes/${loja.id}/${chave}-${Date.now()}-${Math.random().toString(36).substring(2)}.${ext}`
-    const { error } = await supabase.storage
-      .from('veiculos-fotos')
-      .upload(nome, file, { upsert: false })
+    try {
+      if (chave === 'favicon') {
+        // Mesmos tipos aceitos pelo bucket (migration 023). SVG fica de fora
+        // de propósito: em bucket público ele pode carregar script.
+        const ext = (file.name.split('.').pop() ?? '').toLowerCase()
+        const tipoPorExtensao = TIPOS_FAVICON[ext]
+        if (!tipoPorExtensao) {
+          setErro('O ícone precisa ser PNG, ICO, WEBP ou JPG (SVG e GIF não são aceitos).')
+          return
+        }
+        if (file.size > TAMANHO_MAXIMO_FAVICON) {
+          setErro('O ícone precisa ter no máximo 10 MB.')
+          return
+        }
+        // Alguns sistemas mandam .ico com tipo vazio ou genérico: usa o tipo
+        // pela extensão quando o do arquivo não estiver na lista do bucket.
+        const contentType = Object.values(TIPOS_FAVICON).includes(file.type) || file.type === 'image/vnd.microsoft.icon'
+          ? file.type
+          : tipoPorExtensao
+        const supabase = createClient()
+        const nome = `configuracoes/${loja.id}/${chave}-${Date.now()}-${Math.random().toString(36).substring(2)}.${ext}`
+        const { error } = await supabase.storage.from('veiculos-fotos').upload(nome, file, { upsert: false, contentType })
+        if (error) {
+          setErro(`Erro ao enviar imagem: ${error.message}`)
+        } else {
+          aplicar(supabase.storage.from('veiculos-fotos').getPublicUrl(nome).data.publicUrl)
+        }
+        return
+      }
 
-    if (error) {
-      setErro(`Erro ao enviar imagem: ${error.message}`)
-    } else {
-      const { data } = supabase.storage.from('veiculos-fotos').getPublicUrl(nome)
-      aplicar(data.publicUrl)
+      const { urls, erros } = await enviarImagensConfiguracao(loja.id, chave, [file], { ladoMaximo: 2000, qualidade: 0.82 })
+      if (erros.length > 0) setErro(`Erro ao enviar imagem: ${erros[0].mensagem}`)
+      if (urls[0]) aplicar(urls[0])
+    } finally {
+      setUploadingChave(null)
     }
-    setUploadingChave(null)
   }
 
-  async function uploadGaleria(files: FileList) {
+  async function uploadGaleria(files: File[]) {
     setUploadingGaleria(true)
     setErro('')
-    const supabase = createClient()
-    const urls: string[] = []
-
-    for (const file of Array.from(files)) {
-      const ext = file.name.split('.').pop()
-      const nome = `configuracoes/${loja.id}/galeria/${Date.now()}-${Math.random().toString(36).substring(2)}.${ext}`
-      const { error } = await supabase.storage
-        .from('veiculos-fotos')
-        .upload(nome, file, { upsert: false })
-
-      if (error) {
-        setErro(`Erro ao enviar imagem: ${error.message}`)
-      } else {
-        const { data } = supabase.storage.from('veiculos-fotos').getPublicUrl(nome)
-        urls.push(data.publicUrl)
+    try {
+      const { urls, erros } = await enviarImagensConfiguracao(loja.id, 'galeria', files)
+      if (erros.length > 0) {
+        setErro(`Erro ao enviar ${erros.length === 1 ? 'imagem' : `${erros.length} imagens`}: ${erros.map(e => `${e.arquivo} — ${e.mensagem}`).join('; ')}`)
       }
+      setGaleriaUrls(prev => [...prev, ...urls])
+    } finally {
+      setUploadingGaleria(false)
     }
-
-    setGaleriaUrls(prev => [...prev, ...urls])
-    setUploadingGaleria(false)
   }
 
   function removerGaleriaFoto(index: number) {
@@ -415,6 +442,7 @@ function ConfiguracoesForm({ loja }: { loja: Loja }) {
           url={faviconUrl}
           uploading={uploadingChave === 'favicon'}
           onUpload={file => uploadImagem('favicon', file, setFaviconUrl)}
+          accept=".png,.ico,.webp,.jpg,.jpeg,image/png,image/x-icon,image/vnd.microsoft.icon,image/webp,image/jpeg"
           onRemover={() => setFaviconUrl('')}
         />
       </div>
@@ -488,7 +516,12 @@ function ConfiguracoesForm({ loja }: { loja: Loja }) {
           accept="image/*"
           multiple
           className="hidden"
-          onChange={e => e.target.files && uploadGaleria(e.target.files)}
+          onChange={e => {
+            // Copia antes de zerar o value (permite reescolher o mesmo arquivo).
+            const arquivos = Array.from(e.target.files ?? [])
+            e.target.value = ''
+            if (arquivos.length > 0) void uploadGaleria(arquivos)
+          }}
         />
       </div>
 

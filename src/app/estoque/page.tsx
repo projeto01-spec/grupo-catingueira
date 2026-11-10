@@ -4,7 +4,8 @@ import { getLoja } from '@/lib/getLoja'
 import VeiculoCard from '@/components/veiculo/VeiculoCard'
 import VeiculoFiltros from '@/components/veiculo/VeiculoFiltros'
 import { Car } from 'lucide-react'
-import type { Veiculo } from '@/types'
+import { SELECT_VEICULO_PUBLICO, VIEW_VEICULOS_PUBLICOS, type VeiculoPublico } from '@/lib/veiculos-publicos'
+import { escaparLike, filtroOrIlike, normalizarTermoBusca } from '@/lib/filtro-busca'
 
 export async function generateMetadata() {
   const loja = await getLoja()
@@ -34,25 +35,24 @@ export default async function EstoquePage({
   const loja = await getLoja()
   const supabase = await createServerSupabase()
 
+  // View pública: já filtra disponível / não-rascunho / não-excluído e só
+  // expõe colunas seguras (ver src/lib/veiculos-publicos.ts).
   let query = supabase
-    .from('veiculos')
-    .select('id, loja_id, marca, modelo, versao, ano, cor, km, combustivel, cambio, preco, valor_oferta, placa, chassi, renavam, tipo, portas, hodometro_venda, descricao, opcionais, status, destaque, fotos, data_aquisicao, created_at, excluido')
-    .eq('status', 'disponivel')
-    .eq('excluido', false)
-    .eq('rascunho', false)
+    .from(VIEW_VEICULOS_PUBLICOS)
+    .select(SELECT_VEICULO_PUBLICO)
     .order('created_at', { ascending: false })
 
   if (loja) {
     query = query.eq('loja_id', loja.id)
   }
 
-  if (params.marca) {
-    query = query.ilike('marca', `%${params.marca}%`)
+  const marca = normalizarTermoBusca(params.marca)
+  if (marca) {
+    query = query.ilike('marca', `%${escaparLike(marca)}%`)
   }
-  if (params.busca) {
-    query = query.or(
-      `marca.ilike.%${params.busca}%,modelo.ilike.%${params.busca}%,versao.ilike.%${params.busca}%`
-    )
+  const filtroBusca = filtroOrIlike(['marca', 'modelo', 'versao'], params.busca)
+  if (filtroBusca) {
+    query = query.or(filtroBusca)
   }
   if (params.cambio) {
     query = query.eq('cambio', params.cambio)
@@ -77,7 +77,7 @@ export default async function EstoquePage({
   if (error) {
     console.error('[EstoquePage] erro ao buscar veículos:', error)
   }
-  const veiculos = (data ?? []) as Veiculo[]
+  const veiculos = (data ?? []) as unknown as VeiculoPublico[]
 
   return (
     <main className="min-h-screen bg-[#F8F8F8]">

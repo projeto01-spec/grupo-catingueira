@@ -5,11 +5,14 @@ import Image from 'next/image'
 import { motion } from 'framer-motion'
 import BotaoWhatsApp from '@/components/ui/BotaoWhatsApp'
 import { formatarPreco } from '@/lib/utils'
-import type { Veiculo, Loja } from '@/types'
+import type { Loja } from '@/types'
+import type { VeiculoPublico } from '@/lib/veiculos-publicos'
 import { Eye } from 'lucide-react'
 
 interface VeiculoCardProps {
-  veiculo: Veiculo
+  // Componente client: as props vão serializadas no HTML. Só aceita o tipo
+  // público (sem placa/chassi/renavam/dados de sócio).
+  veiculo: VeiculoPublico
   loja: Loja
   delay?: number
 }
@@ -127,7 +130,12 @@ export default function VeiculoCard({ veiculo, loja, delay = 0 }: VeiculoCardPro
           >
             VER MAIS
           </Link>
-          <BotaoWhatsApp whatsapp={loja.whatsapp} veiculo={veiculo} texto="WhatsApp" tamanho="sm" />
+          <BotaoWhatsApp
+            whatsapp={loja.whatsapp}
+            veiculo={{ marca: veiculo.marca, modelo: veiculo.modelo, ano: veiculo.ano }}
+            texto="WhatsApp"
+            tamanho="sm"
+          />
         </div>
       </div>
     </motion.div>
