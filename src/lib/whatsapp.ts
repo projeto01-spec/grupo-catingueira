@@ -1,6 +1,6 @@
 import type { Veiculo } from '@/types'
 
-export function gerarLinkWhatsApp(whatsapp: string, veiculo?: Veiculo): string {
+export function gerarLinkWhatsApp(whatsapp: string, veiculo?: Pick<Veiculo, 'marca' | 'modelo' | 'ano'>): string {
   const numero = whatsapp.replace(/\D/g, '')
   const mensagem = veiculo
     ? `Olá! Vi o ${veiculo.marca} ${veiculo.modelo} ${veiculo.ano} no site. Ainda está disponível?`

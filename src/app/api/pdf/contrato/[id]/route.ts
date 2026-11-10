@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { adminSupabase } from '@/lib/supabase-server'
 import { obterPerfilDaSessao, temAcessoLoja } from '@/lib/acesso'
+import { html } from '@/lib/escape-html'
 
 function formatarPreco(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -41,7 +42,8 @@ export async function GET(
     day: '2-digit', month: 'long', year: 'numeric',
   })
 
-  const html = `<!DOCTYPE html>
+  // `html` escapa todo valor interpolado (lib/escape-html.ts).
+  const pagina = html`<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8"/>
@@ -144,7 +146,7 @@ h2{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em
 </body>
 </html>`
 
-  return new NextResponse(html, {
+  return new NextResponse(pagina.toString(), {
     headers: { 'Content-Type': 'text/html; charset=utf-8' },
   })
 }

@@ -7,6 +7,7 @@ import { createServerClient } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
 import { obterPerfilAtivo, podeAcessarVendas, temAcessoLoja, type PerfilAcesso } from '@/lib/acesso'
 import { getLoja } from '@/lib/getLoja'
+import { BUCKET_FOTOS, caminhoDaUrlPublicaFoto, ehCaminhoFotoVeiculo, lojaDoCaminhoFoto } from '@/lib/storage-fotos'
 import type { Anexo, DespesaLoja, ImagensLanding, Perfil, ResultadoAcao, TipoInteracao, TipoLancamento, Venda, Veiculo, VendaPagamentoDetalhes } from '@/types'
 
 function adminSupabase() {
@@ -939,12 +940,84 @@ async function exigirEdicaoVeiculo(veiculoId: string, payload: { loja_id: string
 export async function atualizarFotosVeiculo(veiculoId: string, fotos: string[]) {
   await exigirAcessoVeiculo(veiculoId)
   const supabase = adminSupabase()
+  // Só aceita URLs do bucket de fotos deste projeto ou que o veículo já tinha
+  // (antes qualquer URL externa podia ser gravada como foto do veículo).
+  const { data: atual } = await supabase.from('veiculos').select('fotos').eq('id', veiculoId).single()
+  const jaExistentes = new Set<string>((atual?.fotos ?? []) as string[])
+  if (
+    !Array.isArray(fotos) ||
+    fotos.some(f => typeof f !== 'string' || (!jaExistentes.has(f) && !caminhoDaUrlPublicaFoto(f)))
+  ) {
+    throw new Error('Lista de fotos inválida.')
+  }
   const { error } = await supabase
     .from('veiculos')
     .update({ fotos })
     .eq('id', veiculoId)
   if (error) throw new Error(error.message)
   revalidatePath('/admin/veiculos/' + veiculoId)
+}
+
+// Apaga do Storage um arquivo de foto de veículo que não é mais usado por
+// nenhum veículo (de nenhuma loja — o mesmo arquivo pode ter sido copiado).
+// Usa service role: as policies de Storage (migration 021) não precisam
+// liberar DELETE para o navegador. Falha ao apagar não desfaz a remoção no
+// cadastro — no pior caso sobra um arquivo órfão, nunca uma foto quebrada.
+async function apagarArquivoFotoSeOrfao(url: string): Promise<void> {
+  const caminho = caminhoDaUrlPublicaFoto(url)
+  if (!caminho || !ehCaminhoFotoVeiculo(caminho)) return
+  const supabase = adminSupabase()
+  const { count, error } = await supabase
+    .from('veiculos')
+    .select('id', { count: 'exact', head: true })
+    .contains('fotos', [url])
+  if (error || (count ?? 0) > 0) return
+  const { error: erroRemover } = await supabase.storage.from(BUCKET_FOTOS).remove([caminho])
+  if (erroRemover) console.error('[apagarArquivoFotoSeOrfao] falha ao apagar', caminho, erroRemover.message)
+}
+
+// Aba Fotos de um veículo já salvo: remove a URL do cadastro na hora (sem
+// depender de "Salvar ordem") e apaga o arquivo. Mexe só na URL indicada —
+// uma reordenação ainda não salva no navegador não é sobrescrita aqui.
+export async function removerFotoVeiculo(veiculoId: string, url: string): Promise<ResultadoAcao> {
+  try {
+    await exigirAcessoVeiculo(veiculoId)
+    const supabase = adminSupabase()
+    const { data: veiculo, error } = await supabase.from('veiculos').select('fotos').eq('id', veiculoId).single()
+    if (error || !veiculo) return { ok: false, erro: 'Veículo não encontrado.' }
+
+    const fotosAtuais = (veiculo.fotos ?? []) as string[]
+    if (fotosAtuais.includes(url)) {
+      const { error: erroUpdate } = await supabase
+        .from('veiculos')
+        .update({ fotos: fotosAtuais.filter(f => f !== url) })
+        .eq('id', veiculoId)
+      if (erroUpdate) return { ok: false, erro: erroUpdate.message }
+      await apagarArquivoFotoSeOrfao(url)
+    }
+
+    revalidatePath('/admin/veiculos/' + veiculoId)
+    return { ok: true }
+  } catch (err) {
+    return erroDeAcao(err, 'Não foi possível remover a foto.')
+  }
+}
+
+// Cadastro ainda não salvo: a foto já subiu para o Storage, mas não está em
+// veículo nenhum. Só apaga arquivos da pasta da própria loja e que nenhum
+// veículo usa.
+export async function descartarFotosNaoSalvas(lojaId: string, urls: string[]): Promise<ResultadoAcao> {
+  try {
+    await exigirAcessoLoja(lojaId, 'Você não tem permissão para esta loja.')
+    for (const url of (urls ?? []).slice(0, 50)) {
+      const caminho = caminhoDaUrlPublicaFoto(url)
+      if (!caminho || lojaDoCaminhoFoto(caminho) !== lojaId.toLowerCase()) continue
+      await apagarArquivoFotoSeOrfao(url)
+    }
+    return { ok: true }
+  } catch (err) {
+    return erroDeAcao(err, 'Não foi possível apagar a foto.')
+  }
 }
 
 // Move o veículo para outra loja e registra o histórico em veiculo_transferencias.

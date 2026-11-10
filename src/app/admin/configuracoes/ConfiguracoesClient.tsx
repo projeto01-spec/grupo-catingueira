@@ -15,6 +15,7 @@ import {
 import { SortableContext, useSortable, arrayMove, rectSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { createClient } from '@/lib/supabase'
+import { enviarImagensConfiguracao } from '@/lib/upload-fotos'
 import LandingImage from '@/components/ui/LandingImage'
 import { updateLojaSettings } from '@/app/actions'
 import { useAdmin } from '@/contexts/AdminContext'
@@ -214,48 +215,46 @@ function ConfiguracoesForm({ loja }: { loja: Loja }) {
     },
   })
 
+  // Favicon sobe como está (precisa manter transparência/PNG). As imagens da
+  // home (hero/seções/galeria) passam pela mesma compressão das fotos de
+  // veículo (lib/upload-fotos) — antes subiam cruas, com vários MB.
   async function uploadImagem(chave: string, file: File, aplicar: (url: string) => void) {
     setUploadingChave(chave)
     setErro('')
-    const supabase = createClient()
-    const ext = file.name.split('.').pop()
-    const nome = `configuracoes/${loja.id}/${chave}-${Date.now()}-${Math.random().toString(36).substring(2)}.${ext}`
-    const { error } = await supabase.storage
-      .from('veiculos-fotos')
-      .upload(nome, file, { upsert: false })
+    try {
+      if (chave === 'favicon') {
+        const supabase = createClient()
+        const ext = (file.name.split('.').pop() ?? 'png').replace(/[^a-z0-9]/gi, '').slice(0, 5) || 'png'
+        const nome = `configuracoes/${loja.id}/${chave}-${Date.now()}-${Math.random().toString(36).substring(2)}.${ext}`
+        const { error } = await supabase.storage.from('veiculos-fotos').upload(nome, file, { upsert: false })
+        if (error) {
+          setErro(`Erro ao enviar imagem: ${error.message}`)
+        } else {
+          aplicar(supabase.storage.from('veiculos-fotos').getPublicUrl(nome).data.publicUrl)
+        }
+        return
+      }
 
-    if (error) {
-      setErro(`Erro ao enviar imagem: ${error.message}`)
-    } else {
-      const { data } = supabase.storage.from('veiculos-fotos').getPublicUrl(nome)
-      aplicar(data.publicUrl)
+      const { urls, erros } = await enviarImagensConfiguracao(loja.id, chave, [file], { ladoMaximo: 2000, qualidade: 0.82 })
+      if (erros.length > 0) setErro(`Erro ao enviar imagem: ${erros[0].mensagem}`)
+      if (urls[0]) aplicar(urls[0])
+    } finally {
+      setUploadingChave(null)
     }
-    setUploadingChave(null)
   }
 
-  async function uploadGaleria(files: FileList) {
+  async function uploadGaleria(files: File[]) {
     setUploadingGaleria(true)
     setErro('')
-    const supabase = createClient()
-    const urls: string[] = []
-
-    for (const file of Array.from(files)) {
-      const ext = file.name.split('.').pop()
-      const nome = `configuracoes/${loja.id}/galeria/${Date.now()}-${Math.random().toString(36).substring(2)}.${ext}`
-      const { error } = await supabase.storage
-        .from('veiculos-fotos')
-        .upload(nome, file, { upsert: false })
-
-      if (error) {
-        setErro(`Erro ao enviar imagem: ${error.message}`)
-      } else {
-        const { data } = supabase.storage.from('veiculos-fotos').getPublicUrl(nome)
-        urls.push(data.publicUrl)
+    try {
+      const { urls, erros } = await enviarImagensConfiguracao(loja.id, 'galeria', files)
+      if (erros.length > 0) {
+        setErro(`Erro ao enviar ${erros.length === 1 ? 'imagem' : `${erros.length} imagens`}: ${erros.map(e => `${e.arquivo} — ${e.mensagem}`).join('; ')}`)
       }
+      setGaleriaUrls(prev => [...prev, ...urls])
+    } finally {
+      setUploadingGaleria(false)
     }
-
-    setGaleriaUrls(prev => [...prev, ...urls])
-    setUploadingGaleria(false)
   }
 
   function removerGaleriaFoto(index: number) {
@@ -488,7 +487,12 @@ function ConfiguracoesForm({ loja }: { loja: Loja }) {
           accept="image/*"
           multiple
           className="hidden"
-          onChange={e => e.target.files && uploadGaleria(e.target.files)}
+          onChange={e => {
+            // Copia antes de zerar o value (permite reescolher o mesmo arquivo).
+            const arquivos = Array.from(e.target.files ?? [])
+            e.target.value = ''
+            if (arquivos.length > 0) void uploadGaleria(arquivos)
+          }}
         />
       </div>
 

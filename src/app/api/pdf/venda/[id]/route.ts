@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { adminSupabase } from '@/lib/supabase-server'
 import { obterPerfilDaSessao, podeAcessarVendas, temAcessoLoja } from '@/lib/acesso'
 import { getTenantLogoUrl } from '@/lib/tenant-assets'
+import { html, raw } from '@/lib/escape-html'
 
 function fmt(v: number | null | undefined) {
   if (!v) return ''
@@ -126,14 +127,17 @@ export async function GET(
     </style>
   `
 
-  const rodape = `
+  // Todos os blocos abaixo usam `html` (lib/escape-html.ts): todo valor
+  // interpolado — nome/CPF/endereço do comprador, dados do veículo, detalhes
+  // de pagamento — é escapado. Só `css` (constante deste arquivo) entra com raw().
+  const rodape = html`
     <div class="rodape">
       ${loja.nome} — ${loja.endereco ?? ''} | WhatsApp: ${loja.whatsapp ?? ''}
     </div>
   `
 
   // ── Documento 1: Carro Vendido ─────────────────────────────────────────────
-  const doc1 = `
+  const doc1 = html`
     <div>
       <img class="logo" src="${logoUrl}" alt="${loja.nome}" />
       <div class="titulo">Carro Vendido</div>
@@ -199,7 +203,7 @@ export async function GET(
       <table>
         <tr><th>Forma</th><th>Detalhes</th><th style="text-align:right">Valor</th></tr>
         <tr><td>Recebido</td><td></td><td style="text-align:right">${fmt(venda.valor_venda)}</td></tr>
-        ${pagamentos.map(p => `<tr><td>${labelTipoPagamento(p.tipo)}</td><td>${detalhesPagamento(p)}</td><td style="text-align:right">${fmt(p.valor)}</td></tr>`).join('')}
+        ${pagamentos.map(p => html`<tr><td>${labelTipoPagamento(p.tipo)}</td><td>${detalhesPagamento(p)}</td><td style="text-align:right">${fmt(p.valor)}</td></tr>`)}
         <tr>
           <td><strong>Desc.</strong> ${fmt(venda.desconto)}</td>
           <td><strong>Líquido</strong> ${fmt(venda.valor_liquido)}</td>
@@ -207,15 +211,15 @@ export async function GET(
         </tr>
       </table>
 
-      ${temVeiculoRecebido ? `
+      ${temVeiculoRecebido ? html`
       <table>
         <tr><th colspan="6">Veículo(s) recebido(s) na troca</th></tr>
         <tr><th>Marca</th><th>Modelo</th><th>Ano</th><th>Placa</th><th>Cor</th><th style="text-align:right">Valor de entrada</th></tr>
-        ${pagamentosVeiculo.map(p => `<tr><td>${p.detalhes?.marca ?? ''}</td><td>${p.detalhes?.modelo ?? ''}</td><td>${p.detalhes?.ano ?? ''}</td><td>${p.detalhes?.placa ?? ''}</td><td>${p.detalhes?.cor ?? ''}</td><td style="text-align:right">${fmt(p.valor)}</td></tr>`).join('')}
+        ${pagamentosVeiculo.map(p => html`<tr><td>${p.detalhes?.marca ?? ''}</td><td>${p.detalhes?.modelo ?? ''}</td><td>${p.detalhes?.ano ?? ''}</td><td>${p.detalhes?.placa ?? ''}</td><td>${p.detalhes?.cor ?? ''}</td><td style="text-align:right">${fmt(p.valor)}</td></tr>`)}
       </table>
       ` : ''}
 
-      ${venda.observacoes ? `<p><strong>OBS.:</strong> ${venda.observacoes}</p>` : ''}
+      ${venda.observacoes ? html`<p><strong>OBS.:</strong> ${venda.observacoes}</p>` : ''}
 
       <div class="assinatura">Assinatura do Comprador</div>
       ${rodape}
@@ -223,7 +227,7 @@ export async function GET(
   `
 
   // ── Documento 2: Dados do Comprador ────────────────────────────────────────
-  const doc2 = `
+  const doc2 = html`
     <div class="page-break">
       <div class="titulo">Dados do Comprador</div>
       <div style="border-top:3px double #000;border-bottom:3px double #000;padding:4px 0;margin-bottom:16px;"></div>
@@ -242,7 +246,7 @@ export async function GET(
       <div class="grid2">
         <div class="campo"><label>Data nasc.</label><span>${fmtData(venda.comprador_data_nasc)}</span></div>
         <div class="campo"><label>Est. Civil</label><span>
-          ${venda.comprador_estado_civil === 'Solteiro' ? '(X) Solteiro &nbsp;&nbsp; ( ) Casado' : venda.comprador_estado_civil === 'Casado' ? '( ) Solteiro &nbsp;&nbsp; (X) Casado' : '( ) Solteiro &nbsp;&nbsp; ( ) Casado'}
+          ${raw(venda.comprador_estado_civil === 'Solteiro' ? '(X) Solteiro &nbsp;&nbsp; ( ) Casado' : venda.comprador_estado_civil === 'Casado' ? '( ) Solteiro &nbsp;&nbsp; (X) Casado' : '( ) Solteiro &nbsp;&nbsp; ( ) Casado')}
         </span></div>
       </div>
       <div class="grid2">
@@ -258,7 +262,7 @@ export async function GET(
   `
 
   // ── Documento 3: Certificado de Garantia ──────────────────────────────────
-  const doc3 = `
+  const doc3 = html`
     <div class="page-break">
       <img class="logo" src="${logoUrl}" alt="${loja.nome}" />
       <div class="titulo">Certificado de Garantia</div>
@@ -308,7 +312,7 @@ export async function GET(
   // Só faz sentido quando há veículo recebido na troca — é o antigo dono do
   // carro recebido declarando responsabilidade sobre ELE (o veículo que está
   // vendendo pra loja), não sobre o carro que está comprando.
-  const doc4 = !temVeiculoRecebido ? '' : `
+  const doc4 = !temVeiculoRecebido ? '' : html`
     <div class="page-break">
       <img class="logo" src="${logoUrl}" alt="${loja.nome}" />
       <div class="titulo">Termo de Responsabilidade</div>
@@ -344,12 +348,12 @@ export async function GET(
     </div>
   `
 
-  const html = `<!DOCTYPE html>
+  const pagina = html`<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
   <title>Documentos de Venda — ${venda.comprador_nome}</title>
-  ${css}
+  ${raw(css)}
 </head>
 <body>
   ${doc1}
@@ -360,7 +364,7 @@ export async function GET(
 </body>
 </html>`
 
-  return new NextResponse(html, {
+  return new NextResponse(pagina.toString(), {
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
     },

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { adminSupabase } from '@/lib/supabase-server'
 import { obterPerfilDaSessao, temAcessoLoja } from '@/lib/acesso'
+import { corCssSegura, html, raw } from '@/lib/escape-html'
 
 function formatarPreco(v: number) {
   return v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
@@ -46,20 +47,26 @@ export async function GET(
     cor_primaria: string
   }
 
-  const veiculoUrl = `https://${loja.dominio}/veiculo/${id}`
-  const corPrimaria = loja.cor_primaria ?? '#111111'
+  // Domínio e cor vêm do banco: só entram no QR/CSS se tiverem formato válido.
+  const dominioValido = /^[a-z0-9.-]+$/i.test(loja.dominio ?? '')
+  const veiculoUrl = dominioValido ? `https://${loja.dominio}/veiculo/${encodeURIComponent(id)}` : null
+  const corPrimaria = corCssSegura(loja.cor_primaria, '#111111')
 
+  // SVG gerado pela lib `qrcode` (não contém dado digitado pelo usuário além
+  // da URL codificada nos módulos do QR) — entra como HTML confiável.
   let qrSvg = ''
-  try {
-    const QRCode = (await import('qrcode')).default
-    qrSvg = await QRCode.toString(veiculoUrl, { type: 'svg', width: 72, margin: 0 })
-  } catch {
-    qrSvg = ''
+  if (veiculoUrl) {
+    try {
+      const QRCode = (await import('qrcode')).default
+      qrSvg = await QRCode.toString(veiculoUrl, { type: 'svg', width: 72, margin: 0 })
+    } catch {
+      qrSvg = ''
+    }
   }
 
   const opcionaisExibir = (veiculo.opcionais as string[] ?? []).slice(0, 6)
 
-  const html = `<!DOCTYPE html>
+  const pagina = html`<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8"/>
@@ -118,7 +125,7 @@ html, body {
   font-weight: 900;
   letter-spacing: -0.5px;
   line-height: 1;
-  color: ${corPrimaria};
+  color: ${raw(corPrimaria)};
 }
 .specs-grid {
   display: grid;
@@ -241,11 +248,11 @@ html, body {
     </div>
   </div>
 
-  ${opcionaisExibir.length > 0 ? `
+  ${opcionaisExibir.length > 0 ? html`
   <div class="opcionais">
     <div class="opcionais-titulo">Opcionais</div>
     <div class="opcionais-lista">
-      ${opcionaisExibir.map(op => `<span class="opcional-tag">${op}</span>`).join('')}
+      ${opcionaisExibir.map(op => html`<span class="opcional-tag">${op}</span>`)}
     </div>
   </div>
   ` : ''}
@@ -255,14 +262,14 @@ html, body {
       <div class="wa-label">WhatsApp</div>
       <div class="wa-numero">${loja.whatsapp}</div>
     </div>
-    ${qrSvg ? `<div class="qr-box">${qrSvg}</div>` : ''}
+    ${qrSvg ? html`<div class="qr-box">${raw(qrSvg)}</div>` : ''}
   </div>
 
 </div>
 </body>
 </html>`
 
-  return new NextResponse(html, {
+  return new NextResponse(pagina.toString(), {
     headers: { 'Content-Type': 'text/html; charset=utf-8' },
   })
 }

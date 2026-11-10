@@ -1,21 +1,32 @@
 import { createClient } from '@/lib/supabase'
+import { BUCKET_FOTOS } from '@/lib/storage-fotos'
 
 // Só navegador (usa Image, canvas e XMLHttpRequest) — importar apenas de
 // Client Components.
 //
-// Upload de fotos de veículo direto do navegador para o Storage
-// (bucket público `veiculos-fotos`, caminho `${lojaId}/...`).
+// Upload direto do navegador para o Storage (bucket público `veiculos-fotos`).
+// Não passa por Server Action, então não há limite de body do Next/Vercel.
 //
 // Foto de câmera de celular tem 3–10 MB e 4000px+; enviada crua por rede
-// móvel ela falhava ou demorava minutos — no Storage só existiam JPEGs de
-// ~100 KB (fotos já comprimidas, vindas de WhatsApp/computador). Aqui cada
-// foto é reduzida no próprio aparelho (lado maior ≤ 1600px, JPEG 0.8 — em
-// geral 200–500 KB) e enviada UMA POR VEZ, com progresso real de bytes.
+// móvel ela falhava ou demorava minutos. Aqui cada foto é reduzida no próprio
+// aparelho (lado maior ≤ 1600px, JPEG 0.8 — em geral 200–500 KB) e enviada
+// UMA POR VEZ, com progresso real de bytes.
+//
+// Caminhos (as policies de Storage da migration 021 dependem deles):
+//   fotos de veículo:        {loja_id}/{arquivo}.jpg
+//   imagens de Configurações: configuracoes/{loja_id}/...
 
-const BUCKET = 'veiculos-fotos'
-const LADO_MAXIMO = 1600
-const QUALIDADE_JPEG = 0.8
+const LADO_MAXIMO_PADRAO = 1600
+const QUALIDADE_JPEG_PADRAO = 0.8
 const TIMEOUT_UPLOAD_MS = 120_000
+const MB = 1024 * 1024
+
+export type OpcoesPreparo = {
+  /** Lado maior em px depois de reduzir (padrão 1600). */
+  ladoMaximo?: number
+  /** Qualidade do JPEG, 0–1 (padrão 0.8). */
+  qualidade?: number
+}
 
 export type ProgressoUpload = {
   /** 1-based: foto atual dentro do lote. */
@@ -29,6 +40,16 @@ export type ProgressoUpload = {
 export type ResultadoUpload = {
   urls: string[]
   erros: { arquivo: string; mensagem: string }[]
+}
+
+const MSG_SESSAO = 'sua sessão expirou — saia do sistema e entre novamente'
+
+function ehAndroid(): boolean {
+  return typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent)
+}
+
+function tamanhoLegivel(bytes: number): string {
+  return bytes >= MB ? `${(bytes / MB).toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`
 }
 
 function carregarImagem(file: File): Promise<HTMLImageElement> {
@@ -51,27 +72,38 @@ function carregarImagem(file: File): Promise<HTMLImageElement> {
  * Reduz e converte para JPEG no navegador. <img> já aplica a rotação EXIF
  * (image-orientation: from-image é o padrão), então a foto em pé não sai
  * deitada; recodificar também descarta os metadados (inclusive GPS).
+ *
+ * Não usar para logo/favicon: transparência vira fundo branco.
  */
-export async function prepararFoto(file: File): Promise<Blob> {
+export async function prepararFoto(file: File, opcoes: OpcoesPreparo = {}): Promise<Blob> {
+  const ladoMaximo = opcoes.ladoMaximo ?? LADO_MAXIMO_PADRAO
+  const qualidade = opcoes.qualidade ?? QUALIDADE_JPEG_PADRAO
+
   const ehHeic = /hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name)
   if (file.type && !file.type.startsWith('image/') && !ehHeic) {
-    throw new Error('o arquivo não é uma imagem')
+    throw new Error('o arquivo não é uma imagem (use JPG, PNG ou WEBP)')
   }
 
   let img: HTMLImageElement
   try {
     img = await carregarImagem(file)
   } catch {
-    // Chrome/Android não decodifica HEIC; Safari (iPhone) decodifica e, com
-    // accept="image/*", normalmente já entrega JPEG.
-    throw new Error(
-      ehHeic
-        ? 'formato HEIC não suportado neste navegador. No iPhone, use Ajustes > Câmera > Formatos > "Mais Compatível", ou envie pelo Safari'
-        : 'não foi possível ler esta imagem'
-    )
+    if (ehHeic) {
+      // Chrome/Android não decodifica HEIC; Safari (iPhone) decodifica e, com
+      // accept="image/*", normalmente já entrega JPEG.
+      throw new Error(
+        ehAndroid()
+          ? 'foto em formato HEIC (de iPhone) não abre no Android. Envie esta foto pelo próprio iPhone, ou peça a foto em JPG'
+          : 'formato HEIC não suportado neste navegador. No iPhone, use Ajustes > Câmera > Formatos > "Mais Compatível", ou envie pelo Safari'
+      )
+    }
+    if (file.size > 25 * MB) {
+      throw new Error(`foto grande demais para este aparelho processar (${tamanhoLegivel(file.size)}). Tente uma foto menor ou envie pelo computador`)
+    }
+    throw new Error('não foi possível abrir esta imagem (arquivo corrompido ou formato não suportado)')
   }
 
-  const escala = Math.min(1, LADO_MAXIMO / Math.max(img.naturalWidth, img.naturalHeight))
+  const escala = Math.min(1, ladoMaximo / Math.max(img.naturalWidth, img.naturalHeight))
   const largura = Math.max(1, Math.round(img.naturalWidth * escala))
   const altura = Math.max(1, Math.round(img.naturalHeight * escala))
 
@@ -79,19 +111,34 @@ export async function prepararFoto(file: File): Promise<Blob> {
   canvas.width = largura
   canvas.height = altura
   const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('o navegador não conseguiu processar a imagem')
+  if (!ctx) throw new Error('o navegador não conseguiu processar a imagem (pouca memória?) — feche outros apps e tente de novo')
   ctx.imageSmoothingQuality = 'high'
   // Fundo branco: PNG com transparência viraria preto no JPEG.
   ctx.fillStyle = '#fff'
   ctx.fillRect(0, 0, largura, altura)
   ctx.drawImage(img, 0, 0, largura, altura)
 
-  const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', QUALIDADE_JPEG))
+  const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', qualidade))
   // Libera a memória do canvas já (celular com pouca RAM processando várias fotos).
   canvas.width = 0
   canvas.height = 0
-  if (!blob) throw new Error('o navegador não conseguiu converter a imagem')
+  if (!blob) throw new Error('o navegador não conseguiu converter a imagem — tente de novo')
   return blob
+}
+
+/** Traduz a resposta de erro do Storage em uma mensagem para quem está usando. */
+function mensagemErroStorage(status: number, detalhe: string, tamanho: number): string {
+  const d = detalhe.toLowerCase()
+  if (status === 401 || /jwt|token|expired|unauthorized|invalid signature/.test(d)) return MSG_SESSAO
+  if (/row-level security|row level security|violates.*policy/.test(d)) {
+    return 'sem permissão para enviar fotos desta loja. Saia do sistema e entre novamente; se continuar, fale com o administrador'
+  }
+  if (status === 413 || /payload too large|maximum allowed size|too large/.test(d)) {
+    return `a foto ficou maior que o limite do servidor (${tamanhoLegivel(tamanho)}) — avise o administrador`
+  }
+  if (status === 415 || /mime|content type|invalid_mime_type/.test(d)) return 'formato de arquivo não aceito pelo servidor'
+  if (status === 403) return MSG_SESSAO
+  return `o servidor recusou o envio (HTTP ${status}${detalhe ? `: ${detalhe}` : ''})`
 }
 
 /**
@@ -106,14 +153,14 @@ function enviarBlob(
 ): Promise<void> {
   const base = process.env.NEXT_PUBLIC_SUPABASE_URL!
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  const url = `${base}/storage/v1/object/${BUCKET}/${caminho.split('/').map(encodeURIComponent).join('/')}`
+  const url = `${base}/storage/v1/object/${BUCKET_FOTOS}/${caminho.split('/').map(encodeURIComponent).join('/')}`
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', url)
     xhr.setRequestHeader('Authorization', `Bearer ${token}`)
     xhr.setRequestHeader('apikey', anonKey)
-    xhr.setRequestHeader('Content-Type', 'image/jpeg')
+    xhr.setRequestHeader('Content-Type', blob.type || 'image/jpeg')
     xhr.setRequestHeader('x-upsert', 'false')
     xhr.setRequestHeader('Cache-Control', 'max-age=31536000')
     xhr.timeout = TIMEOUT_UPLOAD_MS
@@ -131,32 +178,44 @@ function enviarBlob(
       } catch {
         detalhe = xhr.responseText.slice(0, 200)
       }
-      reject(new Error(`o servidor recusou o envio (HTTP ${xhr.status}${detalhe ? `: ${detalhe}` : ''})`))
+      reject(new Error(mensagemErroStorage(xhr.status, detalhe, blob.size)))
     }
-    xhr.onerror = () => reject(new Error('falha de conexão durante o envio — verifique a internet e tente de novo'))
+    xhr.onerror = () =>
+      reject(new Error(
+        typeof navigator !== 'undefined' && navigator.onLine === false
+          ? 'sem internet no momento — conecte e tente de novo'
+          : 'falha de conexão durante o envio — verifique a internet e tente de novo'
+      ))
     xhr.ontimeout = () => reject(new Error('o envio demorou demais (conexão lenta) — tente de novo com wi-fi ou menos fotos por vez'))
     xhr.send(blob)
   })
 }
 
+function nomeAleatorio(): string {
+  return `${Date.now()}-${Math.random().toString(36).substring(2)}`
+}
+
 /**
- * Prepara e envia as fotos uma por vez. Não para no primeiro erro: devolve as
- * URLs que subiram e a lista de erros por arquivo para mostrar na tela.
+ * Prepara e envia arquivos um por vez para `${pasta}/{aleatorio}.jpg`.
+ * Não para no primeiro erro: devolve as URLs que subiram e os erros por arquivo.
  */
-export async function enviarFotosVeiculo(
-  lojaId: string,
+async function enviarLote(
+  pasta: string,
   arquivos: File[],
+  opcoes: OpcoesPreparo,
   onProgresso: (p: ProgressoUpload) => void
 ): Promise<ResultadoUpload> {
   const resultado: ResultadoUpload = { urls: [], erros: [] }
   if (arquivos.length === 0) return resultado
 
   const supabase = createClient()
+  // getSession() renova o access token se estiver vencido (refresh token
+  // ainda válido); se nem isso der, a sessão acabou de verdade.
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) {
     return {
       urls: [],
-      erros: arquivos.map(f => ({ arquivo: f.name, mensagem: 'sessão expirada — atualize a página e entre de novo' })),
+      erros: arquivos.map(f => ({ arquivo: f.name || 'foto', mensagem: MSG_SESSAO })),
     }
   }
 
@@ -164,18 +223,18 @@ export async function enviarFotosVeiculo(
     const atual = i + 1
     try {
       onProgresso({ atual, total: arquivos.length, etapa: 'preparando', percentual: 0 })
-      const blob = await prepararFoto(file)
+      const blob = await prepararFoto(file, opcoes)
 
       // Token lido a cada foto: um lote longo pode atravessar a renovação da sessão.
       const { data: { session: s } } = await supabase.auth.getSession()
-      const token = s?.access_token ?? session.access_token
+      if (!s) throw new Error(MSG_SESSAO)
 
-      const caminho = `${lojaId}/${Date.now()}-${Math.random().toString(36).substring(2)}.jpg`
+      const caminho = `${pasta}/${nomeAleatorio()}.jpg`
       onProgresso({ atual, total: arquivos.length, etapa: 'enviando', percentual: 0 })
-      await enviarBlob(caminho, blob, token, percentual =>
+      await enviarBlob(caminho, blob, s.access_token, percentual =>
         onProgresso({ atual, total: arquivos.length, etapa: 'enviando', percentual })
       )
-      resultado.urls.push(supabase.storage.from(BUCKET).getPublicUrl(caminho).data.publicUrl)
+      resultado.urls.push(supabase.storage.from(BUCKET_FOTOS).getPublicUrl(caminho).data.publicUrl)
     } catch (err) {
       resultado.erros.push({
         arquivo: file.name || `foto ${atual}`,
@@ -184,6 +243,31 @@ export async function enviarFotosVeiculo(
     }
   }
   return resultado
+}
+
+/** Fotos de veículo: `{loja_id}/...`, lado maior 1600px. */
+export function enviarFotosVeiculo(
+  lojaId: string,
+  arquivos: File[],
+  onProgresso: (p: ProgressoUpload) => void
+): Promise<ResultadoUpload> {
+  return enviarLote(lojaId, arquivos, {}, onProgresso)
+}
+
+/**
+ * Imagens da home (hero, seções, galeria) em /admin/configuracoes:
+ * `configuracoes/{loja_id}/{subpasta}/...`, comprimidas como as fotos.
+ * Não usar para favicon/logo (precisam manter transparência).
+ */
+export function enviarImagensConfiguracao(
+  lojaId: string,
+  subpasta: string,
+  arquivos: File[],
+  opcoes: OpcoesPreparo = {},
+  onProgresso: (p: ProgressoUpload) => void = () => {}
+): Promise<ResultadoUpload> {
+  const sub = subpasta.replace(/[^a-z0-9_-]/gi, '') || 'imagens'
+  return enviarLote(`configuracoes/${lojaId}/${sub}`, arquivos, opcoes, onProgresso)
 }
 
 export function textoProgresso(p: ProgressoUpload | null): string {

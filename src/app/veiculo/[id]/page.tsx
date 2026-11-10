@@ -6,7 +6,12 @@ import BotaoWhatsApp from '@/components/ui/BotaoWhatsApp'
 import VeiculoCard from '@/components/veiculo/VeiculoCard'
 import GaleriaClient from './GaleriaClient'
 import { formatarPreco } from '@/lib/utils'
-import type { Veiculo } from '@/types'
+import { SELECT_VEICULO_PUBLICO, VIEW_VEICULOS_PUBLICOS, type VeiculoPublico } from '@/lib/veiculos-publicos'
+
+// id inválido iria para o Postgres como uuid e voltaria erro 22P02 — corta antes.
+function ehUuid(id: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+}
 
 export async function generateMetadata({
   params,
@@ -16,7 +21,9 @@ export async function generateMetadata({
   const { id } = await params
   const loja = await getLoja()
   const supabase = await createServerSupabase()
-  const { data } = await supabase.from('veiculos').select('marca, modelo, ano').eq('id', id).single()
+  if (!ehUuid(id)) return { title: loja?.nome ?? 'Veículo' }
+  const query = supabase.from(VIEW_VEICULOS_PUBLICOS).select('marca, modelo, ano').eq('id', id)
+  const { data } = await (loja ? query.eq('loja_id', loja.id) : query).maybeSingle()
   if (!data) return { title: loja?.nome ?? 'Veículo' }
   return {
     title: `${data.marca} ${data.modelo} ${data.ano} | ${loja?.nome ?? ''}`,
@@ -33,30 +40,32 @@ export default async function VeiculoPage({
   const loja = await getLoja()
   const supabase = await createServerSupabase()
 
-  const veiculoColunas = 'id, loja_id, marca, modelo, versao, ano, cor, km, combustivel, cambio, preco, valor_oferta, placa, chassi, renavam, tipo, portas, hodometro_venda, descricao, opcionais, status, destaque, fotos, data_aquisicao, created_at, excluido, rascunho'
+  if (!ehUuid(id)) notFound()
 
-  const { data } = await supabase.from('veiculos').select(veiculoColunas).eq('id', id).single()
+  // View pública: só veículos disponíveis, não-rascunho e não-excluídos, com
+  // colunas seguras (ver src/lib/veiculos-publicos.ts). Reservado/vendido
+  // continuam dando 404, como antes — a tarja "VENDIDO" é a Fase 3.
+  const { data } = await supabase
+    .from(VIEW_VEICULOS_PUBLICOS)
+    .select(SELECT_VEICULO_PUBLICO)
+    .eq('id', id)
+    .maybeSingle()
   if (!data) notFound()
 
-  const veiculo = data as Veiculo
+  const veiculo = data as unknown as VeiculoPublico
   if (loja && veiculo.loja_id !== loja.id) notFound()
-  if (veiculo.excluido) notFound()
-  if (veiculo.rascunho) notFound()
 
   const { data: similares, error: erroSimilares } = await supabase
-    .from('veiculos')
-    .select(veiculoColunas)
+    .from(VIEW_VEICULOS_PUBLICOS)
+    .select(SELECT_VEICULO_PUBLICO)
     .eq('loja_id', veiculo.loja_id)
-    .eq('status', 'disponivel')
-    .eq('excluido', false)
-    .eq('rascunho', false)
     .neq('id', veiculo.id)
     .limit(3)
 
   if (erroSimilares) {
     console.error('[VeiculoPage] erro ao buscar veículos similares:', erroSimilares)
   }
-  const veiculosSimilares = (similares ?? []) as Veiculo[]
+  const veiculosSimilares = (similares ?? []) as unknown as VeiculoPublico[]
 
   const statusLabel: Record<string, { label: string; cls: string }> = {
     disponivel: { label: 'Disponível', cls: 'bg-green-100 text-green-700' },
